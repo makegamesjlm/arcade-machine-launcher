@@ -1,0 +1,6 @@
+﻿{
+    "name":  "Pixel Pilots",
+    "description":  "Co-op shoot-em-up. One flies, one shoots.",
+    "executable":  "game.x86_64",
+    "players":  2
+}

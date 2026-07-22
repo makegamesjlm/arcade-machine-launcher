@@ -1,0 +1,26 @@
+[Unit]
+Description=Arcade cabinet launcher
+# A systemd *user* unit: it needs the graphical session's display and the
+# session's access to /dev/input, so it starts with the session and stops
+# with it.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/opt/arcade-launcher/arcade-launcher
+WorkingDirectory=/opt/arcade-launcher
+
+# The launcher is the shell of this machine. If it dies, bring it back rather
+# than leaving the cabinet on an empty desktop.
+Restart=always
+RestartSec=2
+
+# Left at the default KillMode=control-group on purpose: a running game is a
+# child of this unit, so restarting the launcher takes the game down with it.
+# That loses whatever was on screen, but it is the only way the cabinet ends up
+# in a known state instead of a restarted launcher sitting behind an orphaned
+# game that still owns the display.
+
+[Install]
+WantedBy=graphical-session.target

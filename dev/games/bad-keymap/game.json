@@ -1,0 +1,6 @@
+{
+  "name": "Bad Keymap",
+  "description": "Fixture: loads, but its keymap names a button the service rejects.",
+  "executable": "game.x86_64",
+  "players": 1
+}

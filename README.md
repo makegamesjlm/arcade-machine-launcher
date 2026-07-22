@@ -1,0 +1,154 @@
+# Arcade machine launcher
+
+A fullscreen, controller-only game launcher for a two-player arcade cabinet
+running Bazzite. It scans `/games`, shows a grid, and on selection installs that
+game's controller mapping before starting it.
+
+Built with Godot 4.7.
+
+## How a game is installed
+
+One folder per game under `/games`:
+
+```
+/games/
+  neon-drift/
+    game.json      required - name, description, executable, player count
+    icon.png       optional - shown in the grid
+    keymap.json    optional - button mapping applied while this game runs
+    game.x86_64    the binary
+```
+
+### game.json
+
+```json
+{
+  "name": "Neon Drift",
+  "description": "Two-player top-down racing through a rain-slick city.",
+  "executable": "game.x86_64",
+  "players": 2
+}
+```
+
+| Key | Required | Notes |
+| --- | --- | --- |
+| `name` | no | Falls back to the folder name |
+| `description` | no | Shown under the grid for the selected game |
+| `executable` | **yes** | Relative to the game folder, or an absolute path |
+| `players` | no | Defaults to `1` |
+| `args` | no | Array of extra arguments for the executable |
+
+The game runs with its own folder as the working directory.
+
+### keymap.json
+
+Maps the cabinet's physical buttons to the Xbox names the `shanwan-remap`
+service understands:
+
+```json
+{
+  "top_left": "LB",
+  "top_middle": "Y",
+  "top_right": "X",
+  "bottom_left": "RB",
+  "bottom_middle": "B",
+  "bottom_right": "A",
+  "white": "Start"
+}
+```
+
+Cabinet buttons: `top_left`, `top_middle`, `top_right`, `bottom_left`,
+`bottom_middle`, `bottom_right`, `white`.
+
+Xbox names: `A`, `B`, `X`, `Y`, `LB`, `RB`, `LT`, `RT`, `Back`, `Start`,
+`Guide`, `LS`, `RS`.
+
+A game with no `keymap.json` runs with the launcher's own mapping. A keymap that
+names an unknown button is **rejected whole** — the game still appears and is
+still playable, but the launcher will not install a mapping it knows the service
+would choke on, and says so in the amber strip at the bottom of the screen.
+
+## Cabinet setup
+
+```bash
+sudo ./scripts/setup-arcade.sh
+```
+
+This creates `/etc/shanwan-remap` and `/games`, makes the keymap directory
+writable by a new `arcade` group, adds your user to it, and seeds a starting
+keymap. Log out and back in afterwards so the group membership takes effect.
+
+The launcher then writes `/etc/shanwan-remap/keymap.json` directly, with no
+`sudo` in the loop. The write is atomic — a temp file in the same directory
+followed by a rename — so the polling service never reads a half-written file.
+
+Then build and install the service: [systemd/README-service.md](systemd/README-service.md).
+
+## Controls
+
+| Input | Action |
+| --- | --- |
+| Joystick / d-pad | Move around the grid |
+| Bottom-right button | Play the selected game |
+| Bottom-middle button | Dismiss an error |
+| White button | Rescan `/games` |
+
+Either controller can drive the menu.
+
+## What happens on select
+
+1. The game's `keymap.json` is validated and installed at
+   `/etc/shanwan-remap/keymap.json`.
+2. The launcher waits 2.2s for the remap service to hot-reload, so the game's
+   first frame already has the right buttons.
+3. The launcher minimizes, drops to 5 FPS, and starts the executable.
+4. It polls twice a second until the process is gone.
+5. The launcher's own keymap is restored, the window comes back to the
+   foreground, and `/games` is rescanned.
+
+A game that exits non-zero within 2 seconds is reported as a failed launch
+rather than a finished session.
+
+## Development
+
+The launcher can run on a desktop against fake games. Paths are overridable:
+
+```bash
+godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json
+```
+
+`--games-dir`, `--keymap-path` and `--no-fullscreen` also read from
+`ARCADE_GAMES_DIR` and `ARCADE_KEYMAP_PATH`.
+
+`dev/games/` holds fixtures, including deliberately broken ones (invalid JSON,
+missing binary, a keymap with bad button names) to exercise the error paths.
+
+### Tests
+
+```bash
+godot --headless --path . res://tests/test_core.tscn
+```
+
+Covers the scanner, keymap validation, and the atomic install. Exits non-zero on
+failure.
+
+### Screenshots
+
+```bash
+godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- \
+    --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json \
+    --shot=/tmp/grid.png --nav=nav_down --shot=/tmp/moved.png
+```
+
+## Layout
+
+| Path | What |
+| --- | --- |
+| `scripts/cfg.gd` | Autoloaded paths and constants, including the launcher's own keymap |
+| `scripts/game_scanner.gd` | `/games` → `GameEntry` objects, with errors and warnings |
+| `scripts/keymap_writer.gd` | Keymap validation and the atomic install |
+| `scripts/game_launcher.gd` | The launch → play → return cycle |
+| `scripts/main.gd` | Grid, navigation, overlays |
+| `scenes/` | `main.tscn`, `game_card.tscn` |
+| `scripts/setup-arcade.sh` | One-time cabinet permissions setup |
+| `systemd/` | User unit and install notes |

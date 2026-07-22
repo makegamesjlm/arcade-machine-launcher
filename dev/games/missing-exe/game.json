@@ -1,0 +1,6 @@
+{
+  "name": "Missing Exe",
+  "description": "Fixture: game.json points at a binary that is not there.",
+  "executable": "game.x86_64",
+  "players": 1
+}

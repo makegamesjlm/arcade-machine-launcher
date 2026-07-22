@@ -1,0 +1,6 @@
+﻿{
+    "name":  "Sumo Slam",
+    "description":  "Push the other player off the disc. That is the whole game.",
+    "executable":  "game.x86_64",
+    "players":  2
+}

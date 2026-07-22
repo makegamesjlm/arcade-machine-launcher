@@ -1,0 +1,212 @@
+[gd_scene load_steps=4 format=3 uid="uid://bmain0arcade01"]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_detail"]
+bg_color = Color(0.086, 0.09, 0.137, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_problems"]
+bg_color = Color(0.176, 0.114, 0.043, 1)
+border_width_left = 5
+border_color = Color(0.949, 0.643, 0.196, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.043, 0.043, 0.071, 1)
+
+[node name="Layout" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 72
+theme_override_constants/margin_top = 38
+theme_override_constants/margin_right = 72
+theme_override_constants/margin_bottom = 30
+
+[node name="Column" type="VBoxContainer" parent="Layout"]
+layout_mode = 2
+theme_override_constants/separation = 22
+
+[node name="Header" type="HBoxContainer" parent="Layout/Column"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Layout/Column/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.208, 0.89, 0.89, 1)
+theme_override_constants/line_spacing = 0
+theme_override_font_sizes/font_size = 46
+text = "ARCADE"
+
+[node name="Spacer" type="Control" parent="Layout/Column/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="GameCount" type="Label" parent="Layout/Column/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.541, 0.541, 0.639, 1)
+theme_override_font_sizes/font_size = 22
+text = "0 games"
+vertical_alignment = 1
+
+[node name="Shelf" type="ScrollContainer" parent="Layout/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Center" type="HBoxContainer" parent="Layout/Column/Shelf"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+
+[node name="Grid" type="GridContainer" parent="Layout/Column/Shelf/Center"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_constants/h_separation = 30
+theme_override_constants/v_separation = 30
+columns = 4
+
+[node name="EmptyState" type="CenterContainer" parent="Layout/Column"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="EmptyText" type="Label" parent="Layout/Column/EmptyState"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.541, 0.541, 0.639, 1)
+theme_override_font_sizes/font_size = 30
+text = "No games found"
+horizontal_alignment = 1
+
+[node name="Problems" type="PanelContainer" parent="Layout/Column"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_problems")
+
+[node name="ProblemsMargin" type="MarginContainer" parent="Layout/Column/Problems"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 12
+
+[node name="ProblemsText" type="Label" parent="Layout/Column/Problems/ProblemsMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.816, 0.573, 1)
+theme_override_font_sizes/font_size = 19
+text = "problems"
+
+[node name="Detail" type="PanelContainer" parent="Layout/Column"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_detail")
+
+[node name="DetailMargin" type="MarginContainer" parent="Layout/Column/Detail"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 20
+
+[node name="DetailColumn" type="VBoxContainer" parent="Layout/Column/Detail/DetailMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DetailName" type="Label" parent="Layout/Column/Detail/DetailMargin/DetailColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.949, 0.949, 0.969, 1)
+theme_override_font_sizes/font_size = 32
+text = "—"
+
+[node name="DetailDescription" type="Label" parent="Layout/Column/Detail/DetailMargin/DetailColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.643, 0.643, 0.729, 1)
+theme_override_font_sizes/font_size = 22
+autowrap_mode = 3
+max_lines_visible = 2
+text_overrun_behavior = 3
+
+[node name="Hints" type="Label" parent="Layout/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.435, 0.435, 0.522, 1)
+theme_override_font_sizes/font_size = 20
+text = "Joystick — Browse          Bottom-right — Play          White — Refresh"
+horizontal_alignment = 1
+
+[node name="Overlay" type="ColorRect" parent="."]
+unique_name_in_owner = true
+z_index = 10
+visible = false
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.024, 0.024, 0.04, 0.965)
+
+[node name="OverlayCenter" type="CenterContainer" parent="Overlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="OverlayColumn" type="VBoxContainer" parent="Overlay/OverlayCenter"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="OverlayTitle" type="Label" parent="Overlay/OverlayCenter/OverlayColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.949, 0.949, 0.969, 1)
+theme_override_font_sizes/font_size = 44
+text = "Starting"
+horizontal_alignment = 1
+
+[node name="OverlaySub" type="Label" parent="Overlay/OverlayCenter/OverlayColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1100, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.643, 0.643, 0.729, 1)
+theme_override_font_sizes/font_size = 24
+text = "Applying controller mapping"
+horizontal_alignment = 1
+autowrap_mode = 3

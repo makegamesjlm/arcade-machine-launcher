@@ -1,0 +1,6 @@
+{
+  "name": "Cavern Brawl",
+  "description": "Dig, punch, and shove your rival into the lava.",
+  "executable": "game.x86_64",
+  "players": 2
+}
