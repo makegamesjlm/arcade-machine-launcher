@@ -4,3 +4,6 @@
 
 # Exported binaries
 /build/
+
+# Runtime keymap written by the Windows development simulator
+/dev/keymap.json

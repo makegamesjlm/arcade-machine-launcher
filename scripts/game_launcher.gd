@@ -16,6 +16,14 @@ signal finished(game: GameEntry, exit_code: int)
 ## The game never got as far as running, or died on the launch pad.
 signal failed(game: GameEntry, reason: String)
 
+## Outcomes available to the interactive development simulator. Ignored unless
+## Cfg.simulate_launch was enabled explicitly on the command line.
+enum SimulatedOutcome {
+	SUCCESS,
+	LAUNCH_FAILURE,
+	EARLY_CRASH,
+}
+
 ## A game that dies faster than this almost certainly failed to start rather
 ## than being played and quit, so it is reported as a failure.
 const CRASH_WINDOW_SECONDS := 2.0
@@ -24,6 +32,11 @@ const CRASH_WINDOW_SECONDS := 2.0
 ## to poll the process but must not compete for the GPU.
 const BACKGROUND_MAX_FPS := 5
 
+## Long enough for the preparing state to be visible without reproducing the
+## cabinet service's full 2.2 second reload delay on every simulated launch.
+const SIMULATED_PREPARE_SECONDS := 0.45
+const SIMULATED_CRASH_SECONDS := 1.0
+
 var is_busy: bool:
 	get: return _current != null
 
@@ -31,6 +44,7 @@ var _current: GameEntry = null
 var _pid: int = -1
 var _started_at_msec: int = 0
 var _poll_timer: Timer
+var _simulated_can_finish := false
 
 
 func _ready() -> void:
@@ -46,7 +60,7 @@ func apply_launcher_keymap() -> String:
 	return KeymapWriter.install(Cfg.LAUNCHER_KEYMAP, Cfg.keymap_path)
 
 
-func launch(game: GameEntry) -> void:
+func launch(game: GameEntry, simulated_outcome: int = SimulatedOutcome.SUCCESS) -> void:
 	if is_busy:
 		push_warning("ignoring launch of %s, %s is already running" % [game.id, _current.id])
 		return
@@ -59,6 +73,15 @@ func launch(game: GameEntry) -> void:
 		if not error.is_empty():
 			_fail("could not apply the controller mapping - " + error)
 			return
+
+	if Cfg.simulate_launch:
+		await get_tree().create_timer(SIMULATED_PREPARE_SECONDS).timeout
+		if _current != game:
+			return
+		_start_simulated(game, simulated_outcome)
+		return
+
+	if not game.keymap.is_empty():
 		# The service polls for changes; give it the documented window so the
 		# game's first frame already sees the right buttons.
 		await get_tree().create_timer(Cfg.KEYMAP_RELOAD_SECONDS).timeout
@@ -66,6 +89,36 @@ func launch(game: GameEntry) -> void:
 			return  # cancelled while we were waiting
 
 	_start_process(game)
+
+
+func _start_simulated(game: GameEntry, outcome: int) -> void:
+	match outcome:
+		SimulatedOutcome.LAUNCH_FAILURE:
+			_fail("simulated launch failure: cannot execute %s" % game.executable)
+		SimulatedOutcome.EARLY_CRASH:
+			started.emit(game)
+			await get_tree().create_timer(SIMULATED_CRASH_SECONDS).timeout
+			if _current == game:
+				_fail("%s exited immediately with code 1 (simulated)" % game.name)
+		_:
+			_simulated_can_finish = true
+			started.emit(game)
+
+
+## Ends a successful simulated game session. Returns true only while such a
+## session is actually waiting for the developer to press Back/Escape.
+func finish_simulated_session() -> bool:
+	if not Cfg.simulate_launch or not _simulated_can_finish or _current == null:
+		return false
+
+	var game := _current
+	_current = null
+	_simulated_can_finish = false
+	var keymap_error := apply_launcher_keymap()
+	if not keymap_error.is_empty():
+		push_error("[launcher] could not restore the launcher keymap: " + keymap_error)
+	finished.emit(game, 0)
+	return true
 
 
 func _start_process(game: GameEntry) -> void:
@@ -140,6 +193,7 @@ func _return_to_foreground() -> void:
 func _fail(reason: String) -> void:
 	var game := _current
 	_current = null
+	_simulated_can_finish = false
 	var keymap_error := apply_launcher_keymap()
 	if not keymap_error.is_empty():
 		push_error("[launcher] could not restore the launcher keymap: " + keymap_error)

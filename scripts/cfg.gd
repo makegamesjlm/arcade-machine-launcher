@@ -56,11 +56,17 @@ var keymap_path: String = DEFAULT_KEYMAP_PATH
 ## Set by --no-fullscreen, for debugging on a desktop.
 var fullscreen: bool = true
 
+## Runs the launch lifecycle without starting a platform-specific game binary.
+## This is explicit rather than inferred from the OS, so real Windows exports
+## can still be launched and Linux development can use the same simulator.
+var simulate_launch: bool = false
+
 
 func _ready() -> void:
 	_apply_environment()
 	_apply_command_line()
-	print("[cfg] games_dir=%s keymap_path=%s" % [games_dir, keymap_path])
+	print("[cfg] games_dir=%s keymap_path=%s simulate_launch=%s"
+		% [games_dir, keymap_path, simulate_launch])
 
 
 func _apply_environment() -> void:
@@ -82,6 +88,8 @@ func _apply_command_line() -> void:
 			keymap_path = arg.trim_prefix("--keymap-path=")
 		elif arg == "--no-fullscreen":
 			fullscreen = false
+		elif arg == "--simulate-launch":
+			simulate_launch = true
 	games_dir = _normalize_dir(games_dir)
 
 

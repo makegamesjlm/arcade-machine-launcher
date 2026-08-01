@@ -123,14 +123,30 @@ godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keyma
 `dev/games/` holds fixtures, including deliberately broken ones (invalid JSON,
 missing binary, a keymap with bad button names) to exercise the error paths.
 
+On Windows, add `--simulate-launch` and use a keymap path inside the project:
+
+```powershell
+godot --path . -- --no-fullscreen `
+  --games-dir=dev/games `
+  --keymap-path=dev/keymap.json `
+  --simulate-launch
+```
+
+This runs the real UI and keymap-writing flow without attempting to execute the
+Linux fixture binaries. Arrow keys navigate and F5 refreshes. Enter starts a
+simulated game; press Escape to finish it successfully. Shift+Enter simulates a
+failure before the game starts, and Ctrl+Enter simulates a game that starts and
+then crashes immediately.
+
 ### Tests
 
 ```bash
 godot --headless --path . res://tests/test_core.tscn
+godot --headless --path . res://tests/test_simulated_launch.tscn
 ```
 
-Covers the scanner, keymap validation, and the atomic install. Exits non-zero on
-failure.
+Covers the scanner, keymap validation, atomic install, and all three simulated
+launch outcomes. Exits non-zero on failure.
 
 ### Screenshots
 

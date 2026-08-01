@@ -31,6 +31,7 @@ var _logged_problems := PackedStringArray()
 var _launcher: GameLauncher
 var _input_locked := false
 var _overlay_tween: Tween
+var _simulated_outcome := GameLauncher.SimulatedOutcome.SUCCESS
 
 @onready var _grid: GridContainer = %Grid
 @onready var _shelf: ScrollContainer = %Shelf
@@ -41,6 +42,7 @@ var _overlay_tween: Tween
 @onready var _problems_text: Label = %ProblemsText
 @onready var _detail_name: Label = %DetailName
 @onready var _detail_description: Label = %DetailDescription
+@onready var _hints: Label = %Hints
 @onready var _overlay: ColorRect = %Overlay
 @onready var _overlay_title: Label = %OverlayTitle
 @onready var _overlay_sub: Label = %OverlaySub
@@ -60,6 +62,9 @@ func _ready() -> void:
 	_launcher.started.connect(_on_started)
 	_launcher.finished.connect(_on_finished)
 	_launcher.failed.connect(_on_failed)
+	if Cfg.simulate_launch:
+		_hints.text = ("Arrows: Browse     Enter: Play     Shift+Enter: Fail     "
+			+ "Ctrl+Enter: Crash     F5: Refresh")
 
 	refresh()
 
@@ -217,20 +222,34 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _input_locked:
+		if event.is_action_pressed("nav_back") and _launcher.finish_simulated_session():
+			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("nav_select"):
 		get_viewport().set_input_as_handled()
-		_activate()
+		_activate(_simulation_outcome_for(event))
 	elif event.is_action_pressed("nav_refresh"):
 		get_viewport().set_input_as_handled()
 		refresh()
 
 
-func _activate() -> void:
+func _simulation_outcome_for(event: InputEvent) -> int:
+	if not Cfg.simulate_launch or not event is InputEventKey:
+		return GameLauncher.SimulatedOutcome.SUCCESS
+	var key_event := event as InputEventKey
+	if key_event.ctrl_pressed:
+		return GameLauncher.SimulatedOutcome.EARLY_CRASH
+	if key_event.shift_pressed:
+		return GameLauncher.SimulatedOutcome.LAUNCH_FAILURE
+	return GameLauncher.SimulatedOutcome.SUCCESS
+
+
+func _activate(simulated_outcome: int = GameLauncher.SimulatedOutcome.SUCCESS) -> void:
 	if _selected < 0 or _launcher.is_busy:
 		return
 	_cards[_selected].play_press()
-	_launcher.launch(_cards[_selected].game)
+	_simulated_outcome = simulated_outcome
+	_launcher.launch(_cards[_selected].game, simulated_outcome)
 
 
 # --- launcher lifecycle -------------------------------------------------------
@@ -245,7 +264,12 @@ func _on_preparing(game: GameEntry) -> void:
 
 
 func _on_started(_game: GameEntry) -> void:
-	_overlay_sub.text = "Running"
+	if not Cfg.simulate_launch:
+		_overlay_sub.text = "Running"
+	elif _simulated_outcome == GameLauncher.SimulatedOutcome.EARLY_CRASH:
+		_overlay_sub.text = "Running (simulated)\n\nSimulating an early crash..."
+	else:
+		_overlay_sub.text = "Running (simulated)\n\nPress Escape to return successfully."
 
 
 func _on_finished(_game: GameEntry, _exit_code: int) -> void:
@@ -258,7 +282,9 @@ func _on_finished(_game: GameEntry, _exit_code: int) -> void:
 
 func _on_failed(game: GameEntry, reason: String) -> void:
 	_overlay_title.text = "Could not start %s" % game.name
-	_overlay_sub.text = reason + "\n\nPress the bottom-middle button to go back."
+	var dismiss_hint := ("Press Escape to go back." if Cfg.simulate_launch
+		else "Press the bottom-middle button to go back.")
+	_overlay_sub.text = reason + "\n\n" + dismiss_hint
 	_show_overlay(true)
 
 	# Wait for an explicit dismissal so the message is not missed, but do not
