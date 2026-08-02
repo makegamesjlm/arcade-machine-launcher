@@ -126,10 +126,7 @@ missing binary, a keymap with bad button names) to exercise the error paths.
 On Windows, add `--simulate-launch` and use a keymap path inside the project:
 
 ```powershell
-godot --path . -- --no-fullscreen `
-  --games-dir=dev/games `
-  --keymap-path=dev/keymap.json `
-  --simulate-launch
+godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=dev/keymap.json --simulate-launch
 ```
 
 This runs the real UI and keymap-writing flow without attempting to execute the
@@ -151,9 +148,7 @@ launch outcomes. Exits non-zero on failure.
 ### Screenshots
 
 ```bash
-godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- \
-    --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json \
-    --shot=/tmp/grid.png --nav=nav_down --shot=/tmp/moved.png
+godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json --shot=/tmp/grid.png --nav=nav_down --shot=/tmp/moved.png
 ```
 
 ## Layout
