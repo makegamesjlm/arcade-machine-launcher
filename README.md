@@ -63,6 +63,9 @@ Cabinet buttons: `top_left`, `top_middle`, `top_right`, `bottom_left`,
 Xbox names: `A`, `B`, `X`, `Y`, `LB`, `RB`, `LT`, `RT`, `Back`, `Start`,
 `Guide`, `LS`, `RS`.
 
+The cabinet joysticks are always exposed as Xbox left sticks. `keymap.json`
+only changes the buttons.
+
 A game with no `keymap.json` runs with the launcher's own mapping. A keymap that
 names an unknown button is **rejected whole** — the game still appears and is
 still playable, but the launcher will not install a mapping it knows the service

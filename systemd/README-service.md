@@ -41,6 +41,31 @@ Scan problems (a game folder with no `game.json`, a keymap naming a button the
 remap service does not know) are printed here as warnings, and the first few
 also appear in the amber strip at the bottom of the launcher screen.
 
+## Deploying a game
+
+Game archives will usually have been created on Windows, so do not assume the
+Linux executable bit survived. After extracting or copying the complete game
+folder into `/games`, make the executable named by `game.json` runnable:
+
+```bash
+chmod +x /games/neon-drift/game.x86_64
+```
+
+Keep the executable and all engine-generated data directories, shared
+libraries, content packs, and other runtime files together. Then check the
+installation:
+
+```bash
+test -f /games/neon-drift/game.json
+test -x /games/neon-drift/game.x86_64
+```
+
+Use the cabinet's white button to rescan `/games`; the launcher service does not
+need to be restarted. Launch the game through the arcade launcher for the smoke
+test, then verify that it reaches its menu, accepts both cabinet controllers as
+appropriate, fills the display, and exits cleanly back to the launcher. Check
+`journalctl --user -u arcade-launcher.service` if it does not appear or start.
+
 ## Notes
 
 - The unit is `PartOf=graphical-session.target`, so it starts and stops with the
