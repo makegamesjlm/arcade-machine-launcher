@@ -73,6 +73,18 @@ would choke on, and says so in the amber strip at the bottom of the screen.
 
 ## Cabinet setup
 
+On a fresh cabinet, one script runs every step below in order — permissions, the
+remap service, the build, and the launcher service. Run it as your normal user
+(it escalates the steps that need root itself):
+
+```bash
+./scripts/install-cabinet.sh
+```
+
+`--skip-setup`, `--skip-remap` and `--skip-build` re-run just part of it; see
+`./scripts/install-cabinet.sh --help`. The individual steps are documented below
+if you would rather do them by hand.
+
 ```bash
 sudo ./scripts/setup-arcade.sh
 ```

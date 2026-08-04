@@ -2,6 +2,11 @@
 
 Run these on the cabinet, as the user that owns the graphical session.
 
+> For a fresh cabinet, `./scripts/install-cabinet.sh` does everything on this
+> page (plus the permissions and remap-service setup) in one pass. The steps
+> below are the manual equivalent, useful for rebuilding or reinstalling just
+> the launcher.
+
 ## 1. Build the binary
 
 On a machine with the Godot editor and the Linux export templates installed:
