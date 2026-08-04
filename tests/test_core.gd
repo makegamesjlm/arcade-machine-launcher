@@ -14,6 +14,7 @@ func _ready() -> void:
 	_test_scanner(fixtures)
 	_test_keymap_validation()
 	_test_keymap_install()
+	_test_volume_parsing()
 
 	print("\n%d checks, %d failed" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -127,6 +128,28 @@ func _test_keymap_install() -> void:
 	var missing := KeymapWriter.install(Cfg.LAUNCHER_KEYMAP, dir.path_join("nope/keymap.json"))
 	_check(missing.contains("setup-arcade.sh"),
 		"a missing target dir points at the setup script, got '%s'" % missing)
+
+
+func _test_volume_parsing() -> void:
+	print("\n-- volume parsing")
+
+	var wp := VolumeControl.parse_wpctl("Volume: 0.65")
+	_check(absf(float(wp["volume"]) - 0.65) < 0.001 and not wp["muted"],
+		"wpctl volume is read, got %s" % [wp])
+
+	var wp_muted := VolumeControl.parse_wpctl("Volume: 0.40 [MUTED]")
+	_check(absf(float(wp_muted["volume"]) - 0.40) < 0.001 and wp_muted["muted"],
+		"wpctl mute flag is read, got %s" % [wp_muted])
+
+	_check(absf(float(VolumeControl.parse_wpctl("nonsense")["volume"])) < 0.001,
+		"unparseable wpctl output is a safe zero")
+
+	var pactl_line := "Volume: front-left: 42152 /  64% / -12.00 dB,   front-right: 42152 /  64% / -12.00 dB"
+	_check(absf(VolumeControl.parse_pactl_volume(pactl_line) - 0.64) < 0.001,
+		"pactl channel percentage is read, got %f" % VolumeControl.parse_pactl_volume(pactl_line))
+
+	_check(VolumeControl.parse_pactl_mute("Mute: yes") and not VolumeControl.parse_pactl_mute("Mute: no"),
+		"pactl mute state is read")
 
 
 func _any_contains(haystack: PackedStringArray, needle: String) -> bool:

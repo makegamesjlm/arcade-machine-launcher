@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://bmain0arcade01"]
+[gd_scene load_steps=5 format=3 uid="uid://bmain0arcade01"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 
@@ -17,6 +17,18 @@ corner_radius_top_left = 10
 corner_radius_top_right = 10
 corner_radius_bottom_right = 10
 corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_volume"]
+bg_color = Color(0.086, 0.09, 0.137, 0.98)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.208, 0.89, 0.89, 0.5)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -164,7 +176,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.435, 0.435, 0.522, 1)
 theme_override_font_sizes/font_size = 20
-text = "Joystick — Browse          Bottom-right — Play          White — Refresh"
+text = "Joystick — Browse      Bottom-right — Play      Top-left / Top-right — Volume      Top-middle — Mute      White — Refresh"
 horizontal_alignment = 1
 
 [node name="Overlay" type="ColorRect" parent="."]
@@ -210,3 +222,61 @@ theme_override_font_sizes/font_size = 24
 text = "Applying controller mapping"
 horizontal_alignment = 1
 autowrap_mode = 3
+
+[node name="VolumeBar" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+z_index = 11
+visible = false
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -320.0
+offset_top = -168.0
+offset_right = 320.0
+offset_bottom = -92.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_volume")
+
+[node name="VolumeMargin" type="MarginContainer" parent="VolumeBar"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 18
+
+[node name="VolumeRow" type="HBoxContainer" parent="VolumeBar/VolumeMargin"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="VolumeLabel" type="Label" parent="VolumeBar/VolumeMargin/VolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.208, 0.89, 0.89, 1)
+theme_override_font_sizes/font_size = 24
+text = "VOLUME"
+vertical_alignment = 1
+
+[node name="VolumeProgress" type="ProgressBar" parent="VolumeBar/VolumeMargin/VolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+show_percentage = false
+
+[node name="VolumeValue" type="Label" parent="VolumeBar/VolumeMargin/VolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.949, 0.949, 0.969, 1)
+theme_override_font_sizes/font_size = 24
+text = "50%"
+horizontal_alignment = 2
+vertical_alignment = 1
