@@ -1,0 +1,10 @@
+{
+  "joystick": "dpad",
+  "top_left": "X",
+  "top_middle": "Y",
+  "top_right": "RB",
+  "bottom_left": "A",
+  "bottom_middle": "B",
+  "bottom_right": "RT",
+  "white": "Start"
+}

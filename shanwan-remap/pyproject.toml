@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shanwan-remap"
+version = "2.0.0"
+description = "Remap SHANWAN PS3/PC Gamepad for arcade cabinets"
+requires-python = ">=3.8"
+dependencies = ["evdev"]
+
+[project.scripts]
+shanwan-remap = "shanwan_remap.remap:main"
+shanwan-configure = "shanwan_remap.configure:main"

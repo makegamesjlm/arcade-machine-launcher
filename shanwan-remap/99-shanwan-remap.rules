@@ -1,0 +1,4 @@
+# Restart shanwan-remap when a SHANWAN PS3/PC Gamepad is plugged in or removed
+# Vendor: 0x2563, Product: 0x0575
+ACTION=="add", SUBSYSTEM=="input", ATTR{id/vendor}=="2563", ATTR{id/product}=="0575", TAG+="systemd", RUN+="/usr/bin/systemctl restart shanwan-remap.service"
+ACTION=="remove", SUBSYSTEM=="input", ATTR{id/vendor}=="2563", ATTR{id/product}=="0575", RUN+="/usr/bin/systemctl restart shanwan-remap.service"
