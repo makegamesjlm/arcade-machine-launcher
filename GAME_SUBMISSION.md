@@ -42,6 +42,7 @@ game runs with this folder as its working directory.
 To remap the arcade buttons, include a `keymap.json` file with the following structure:
 ```json
 {
+  "joystick": "left_stick",
   "top_left": "LB",
   "top_middle": "Y",
   "top_right": "X",
@@ -61,8 +62,13 @@ Allowed mappings: `A`, `B`, `X`, `Y`, `LB`, `RB`, `LT`, `RT`, `Back`,
 `Start`, `Guide` (Xbox/Home), `LS` (left-stick click), and `RS` (right-stick
 click). Do not map two cabinet buttons to the same value.
 
-Each cabinet joystick remaps to the Xbox
-left stick; If a different mapping is required for it, please let us know!
+The optional `joystick` key sets what the cabinet joystick reports as:
+
+- `"left_stick"` — left analog stick (default, most games)
+- `"right_stick"` — right analog stick
+- `"dpad"` — digital dpad (fighting games, retro games)
+
+Omit the key to keep the default left-stick behavior.
 
 ## Before sending
 
