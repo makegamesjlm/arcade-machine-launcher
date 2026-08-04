@@ -2,14 +2,18 @@ extends Node
 ## Global paths and constants. Autoloaded as `Cfg`.
 ##
 ## Every path can be overridden at runtime so the launcher can be exercised on a
-## dev machine that has neither /games nor /etc/shanwan-remap:
+## dev machine that has neither the games dir nor /etc/shanwan-remap:
 ##
 ##   godot --games-dir=./dev/games --keymap-path=./dev/keymap.json
 ##
 ## or via the ARCADE_GAMES_DIR / ARCADE_KEYMAP_PATH environment variables.
 ## Command line wins over environment, environment wins over the defaults.
 
-const DEFAULT_GAMES_DIR := "/games"
+## Games live in the arcade user's Nextcloud folder so new titles sync onto the
+## cabinet. Bazzite is an immutable ostree system with a read-only root, so a
+## top-level dir like /games cannot be created there; a home path can. The
+## leading ~ is expanded at runtime (see _normalize_dir).
+const DEFAULT_GAMES_DIR := "~/Nextcloud/Games"
 const DEFAULT_KEYMAP_PATH := "/etc/shanwan-remap/keymap.json"
 
 ## Physical buttons on the cabinet, in the order they are laid out:
@@ -97,6 +101,15 @@ func _apply_command_line() -> void:
 ## slash, so path joins below stay predictable.
 func _normalize_dir(path: String) -> String:
 	var result := path
+	# Expand a leading ~ to the running user's home. Godot leaves it literal, and
+	# it must happen before the is_relative_path check below, which would
+	# otherwise treat "~/..." as relative and glue it onto res://.
+	if result == "~" or result.begins_with("~/"):
+		var home := OS.get_environment("HOME")
+		if home.is_empty():
+			home = OS.get_environment("USERPROFILE")  # dev on Windows
+		if not home.is_empty():
+			result = home.path_join(result.trim_prefix("~").trim_prefix("/"))
 	if result.is_relative_path():
 		result = ProjectSettings.globalize_path("res://").path_join(result)
 	return result.simplify_path().trim_suffix("/")

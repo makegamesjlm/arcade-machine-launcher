@@ -48,12 +48,14 @@ also appear in the amber strip at the bottom of the launcher screen.
 
 ## Deploying a game
 
-Game archives will usually have been created on Windows, so do not assume the
-Linux executable bit survived. After extracting or copying the complete game
-folder into `/games`, make the executable named by `game.json` runnable:
+Games live in `~/Nextcloud/Games`, so dropping a game folder into that Nextcloud
+directory (on any synced machine) copies it onto the cabinet. Game archives will
+usually have been created on Windows, so do not assume the Linux executable bit
+survived. After the folder has synced, make the executable named by `game.json`
+runnable:
 
 ```bash
-chmod +x /games/neon-drift/game.x86_64
+chmod +x ~/Nextcloud/Games/neon-drift/game.x86_64
 ```
 
 Keep the executable and all engine-generated data directories, shared
@@ -61,12 +63,12 @@ libraries, content packs, and other runtime files together. Then check the
 installation:
 
 ```bash
-test -f /games/neon-drift/game.json
-test -x /games/neon-drift/game.x86_64
+test -f ~/Nextcloud/Games/neon-drift/game.json
+test -x ~/Nextcloud/Games/neon-drift/game.x86_64
 ```
 
-Use the cabinet's white button to rescan `/games`; the launcher service does not
-need to be restarted. Launch the game through the arcade launcher for the smoke
+Use the cabinet's white button to rescan the games folder; the launcher service
+does not need to be restarted. Launch the game through the arcade launcher for the smoke
 test, then verify that it reaches its menu, accepts both cabinet controllers as
 appropriate, fills the display, and exits cleanly back to the launcher. Check
 `journalctl --user -u arcade-launcher.service` if it does not appear or start.

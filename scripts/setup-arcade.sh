@@ -10,8 +10,12 @@ set -euo pipefail
 
 KEYMAP_DIR=/etc/shanwan-remap
 KEYMAP_FILE="$KEYMAP_DIR/keymap.json"
-GAMES_DIR=/games
 GROUP=arcade
+# Games live under the arcade user's home (synced there via Nextcloud). Bazzite
+# has a read-only ostree root, so a top-level /games cannot be created; a home
+# path can. Resolved once we know the user, below. Must match Cfg's default in
+# scripts/cfg.gd.
+GAMES_SUBDIR="Nextcloud/Games"
 
 if [[ $EUID -ne 0 ]]; then
 	echo "error: run this with sudo" >&2
@@ -29,6 +33,13 @@ if ! id "$ARCADE_USER" >/dev/null 2>&1; then
 	exit 1
 fi
 
+ARCADE_HOME="$(getent passwd "$ARCADE_USER" | cut -d: -f6)"
+if [[ -z "$ARCADE_HOME" ]]; then
+	echo "error: could not find a home directory for $ARCADE_USER" >&2
+	exit 1
+fi
+GAMES_DIR="$ARCADE_HOME/$GAMES_SUBDIR"
+
 echo "Setting up the cabinet for user '$ARCADE_USER'."
 
 # A dedicated group is the whole trick: root still owns the directory, but the
@@ -38,7 +49,13 @@ groupadd -f "$GROUP"
 usermod -aG "$GROUP" "$ARCADE_USER"
 
 install -d -o root -g "$GROUP" -m 2775 "$KEYMAP_DIR"
-install -d -o "$ARCADE_USER" -g "$GROUP" -m 2775 "$GAMES_DIR"
+
+# Create the games dir AS the arcade user, so any parent it makes (~/Nextcloud
+# if the Nextcloud client has not set it up yet) is owned by the user rather
+# than root, which would otherwise lock the client out of its own folder.
+sudo -u "$ARCADE_USER" mkdir -p "$GAMES_DIR"
+chgrp "$GROUP" "$GAMES_DIR"
+chmod 2775 "$GAMES_DIR"
 
 # Reassert the permissions on every boot. Bazzite is an rpm-ostree system: /etc
 # and /var are writable and persist, but this keeps an image update or a manual

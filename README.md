@@ -1,17 +1,19 @@
 # Arcade machine launcher
 
 A fullscreen, controller-only game launcher for a two-player arcade cabinet
-running Bazzite. It scans `/games`, shows a grid, and on selection installs that
-game's controller mapping before starting it.
+running Bazzite. It scans `~/Nextcloud/Games`, shows a grid, and on selection
+installs that game's controller mapping before starting it.
 
 Built with Godot 4.7.
 
 ## How a game is installed
 
-One folder per game under `/games`:
+One folder per game under `~/Nextcloud/Games` (Nextcloud syncs new titles onto
+the cabinet). The location is the launcher's default; override it with
+`--games-dir` or `ARCADE_GAMES_DIR`.
 
 ```
-/games/
+~/Nextcloud/Games/
   neon-drift/
     game.json      required - name, description, executable, player count
     icon.png       optional - shown in the grid
@@ -89,9 +91,10 @@ if you would rather do them by hand.
 sudo ./scripts/setup-arcade.sh
 ```
 
-This creates `/etc/shanwan-remap` and `/games`, makes the keymap directory
-writable by a new `arcade` group, adds your user to it, and seeds a starting
-keymap. Log out and back in afterwards so the group membership takes effect.
+This creates `/etc/shanwan-remap` and `~/Nextcloud/Games`, makes the keymap
+directory writable by a new `arcade` group, adds your user to it, and seeds a
+starting keymap. Log out and back in afterwards so the group membership takes
+effect.
 
 The launcher then writes `/etc/shanwan-remap/keymap.json` directly, with no
 `sudo` in the loop. The write is atomic — a temp file in the same directory
@@ -106,9 +109,12 @@ Then build and install the service: [systemd/README-service.md](systemd/README-s
 | Joystick / d-pad | Move around the grid |
 | Bottom-right button | Play the selected game |
 | Bottom-middle button | Dismiss an error |
-| White button | Rescan `/games` |
+| Top-left / Top-right button | System volume down / up |
+| Top-middle button | Mute toggle |
+| White button | Rescan the games folder |
 
-Either controller can drive the menu.
+Either controller can drive the menu. Volume and mute work only on the menu
+screen; once a game is running it owns the controller.
 
 ## What happens on select
 
@@ -119,7 +125,7 @@ Either controller can drive the menu.
 3. The launcher minimizes, drops to 5 FPS, and starts the executable.
 4. It polls twice a second until the process is gone.
 5. The launcher's own keymap is restored, the window comes back to the
-   foreground, and `/games` is rescanned.
+   foreground, and the games folder is rescanned.
 
 A game that exits non-zero within 2 seconds is reported as a failed launch
 rather than a finished session.
