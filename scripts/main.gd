@@ -235,9 +235,10 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Volume works from any menu state (including the launch overlays); it never
-	# touches the game, which owns the controller once it is on screen.
-	if _handle_volume(event):
+	# Once launch begins, the controller belongs exclusively to the game. The
+	# launcher stays alive in the background and can still receive joypad events,
+	# so explicitly ignore its volume bindings until the session has finished.
+	if not _launcher.is_busy and _handle_volume(event):
 		return
 	if _input_locked:
 		if event.is_action_pressed("nav_back") and _launcher.finish_simulated_session():
