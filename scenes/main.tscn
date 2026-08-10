@@ -74,6 +74,14 @@ theme_override_constants/line_spacing = 0
 theme_override_font_sizes/font_size = 46
 text = "ARCADE"
 
+[node name="BuildNumber" type="Label" parent="Layout/Column/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.435, 0.435, 0.522, 1)
+theme_override_font_sizes/font_size = 16
+text = "BUILD —"
+vertical_alignment = 1
+
 [node name="Spacer" type="Control" parent="Layout/Column/Header"]
 layout_mode = 2
 size_flags_horizontal = 3

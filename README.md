@@ -49,6 +49,7 @@ service understands:
 
 ```json
 {
+  "joystick": "left_stick",
   "top_left": "LB",
   "top_middle": "Y",
   "top_right": "X",
@@ -65,8 +66,14 @@ Cabinet buttons: `top_left`, `top_middle`, `top_right`, `bottom_left`,
 Xbox names: `A`, `B`, `X`, `Y`, `LB`, `RB`, `LT`, `RT`, `Back`, `Start`,
 `Guide`, `LS`, `RS`.
 
-The cabinet joysticks are always exposed as Xbox left sticks. `keymap.json`
-only changes the buttons.
+The optional `joystick` key controls what each cabinet joystick reports as:
+
+- `"left_stick"` — Xbox left analog stick (default; suitable for most games)
+- `"right_stick"` — Xbox right analog stick
+- `"dpad"` — digital d-pad (useful for fighting and retro games)
+
+Omit `joystick` to retain the default `"left_stick"` behavior. The other keys
+map the cabinet's physical buttons.
 
 A game with no `keymap.json` runs with the launcher's own mapping. A keymap that
 names an unknown button is **rejected whole** — the game still appears and is
@@ -155,6 +162,20 @@ Linux fixture binaries. Arrow keys navigate and F5 refreshes. Enter starts a
 simulated game; press Escape to finish it successfully. Shift+Enter simulates a
 failure before the game starts, and Ctrl+Enter simulates a game that starts and
 then crashes immediately.
+
+### Build number
+
+The current build number lives in `BUILD_NUMBER` and is shown beside the
+launcher title. Enable the repository's Git hooks once after cloning:
+
+```powershell
+./scripts/install-git-hooks.ps1
+```
+
+On Linux, run `bash scripts/install-git-hooks.sh` instead.
+
+The pre-commit hook increments and stages `BUILD_NUMBER` for every commit made
+on `master`. Commits on other branches leave it unchanged.
 
 ### Tests
 

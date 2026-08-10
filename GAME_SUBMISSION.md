@@ -62,13 +62,15 @@ Allowed mappings: `A`, `B`, `X`, `Y`, `LB`, `RB`, `LT`, `RT`, `Back`,
 `Start`, `Guide` (Xbox/Home), `LS` (left-stick click), and `RS` (right-stick
 click). Do not map two cabinet buttons to the same value.
 
-The optional `joystick` key sets what the cabinet joystick reports as:
+The optional top-level `joystick` key sets what each cabinet joystick reports
+as. It is separate from the cabinet-button mappings above and accepts exactly
+one of these values:
 
-- `"left_stick"` — left analog stick (default, most games)
-- `"right_stick"` — right analog stick
-- `"dpad"` — digital dpad (fighting games, retro games)
+- `"left_stick"` — Xbox left analog stick (default; suitable for most games)
+- `"right_stick"` — Xbox right analog stick
+- `"dpad"` — digital d-pad (useful for fighting and retro games)
 
-Omit the key to keep the default left-stick behavior.
+Omit `joystick` to retain the default `"left_stick"` behavior.
 
 ## Before sending
 

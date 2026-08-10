@@ -4,6 +4,7 @@ extends Control
 
 const CARD_SCENE := preload("res://scenes/game_card.tscn")
 const COLUMNS := 4
+const BUILD_NUMBER_PATH := "res://BUILD_NUMBER"
 
 ## Held-direction auto-repeat. The first step fires immediately, then after a
 ## pause the selection walks at a steady rate - slow enough to stop on the game
@@ -43,6 +44,7 @@ var _simulated_outcome := GameLauncher.SimulatedOutcome.SUCCESS
 @onready var _grid: GridContainer = %Grid
 @onready var _shelf: ScrollContainer = %Shelf
 @onready var _game_count: Label = %GameCount
+@onready var _build_number: Label = %BuildNumber
 @onready var _empty_state: CenterContainer = %EmptyState
 @onready var _empty_text: Label = %EmptyText
 @onready var _problems: PanelContainer = %Problems
@@ -65,6 +67,7 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 
 	_grid.columns = COLUMNS
+	_build_number.text = "BUILD %s" % _read_build_number()
 
 	_launcher = GameLauncher.new()
 	_launcher.name = "GameLauncher"
@@ -81,6 +84,15 @@ func _ready() -> void:
 			+ "Ctrl+Enter: Crash     -/=: Volume     M: Mute     F5: Refresh")
 
 	refresh()
+
+
+func _read_build_number() -> String:
+	var file := FileAccess.open(BUILD_NUMBER_PATH, FileAccess.READ)
+	if file == null:
+		push_warning("[launcher] Could not read %s" % BUILD_NUMBER_PATH)
+		return "—"
+	var value := file.get_as_text().strip_edges()
+	return value if value.is_valid_int() else "—"
 
 
 # --- scanning and grid construction ------------------------------------------
