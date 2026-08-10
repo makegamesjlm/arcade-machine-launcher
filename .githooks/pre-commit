@@ -12,7 +12,7 @@ if [ ! -f "$build_file" ]; then
 	exit 1
 fi
 
-build_number=$(tr -d '[:space:]' < "$build_file")
+IFS= read -r build_number < "$build_file" || [ -n "$build_number" ]
 case "$build_number" in
 	''|*[!0-9]*)
 		echo "pre-commit: BUILD_NUMBER must contain a non-negative integer" >&2
