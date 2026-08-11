@@ -76,9 +76,15 @@ func _test_keymap_validation() -> void:
 	print("\n-- keymap validation")
 	_check(KeymapWriter.validate(Cfg.LAUNCHER_KEYMAP).is_empty(),
 		"the launcher's own keymap is valid")
+	_check(KeymapWriter.validate({"joystick": "dpad", "white": "Start"}).is_empty(),
+		"a supported joystick mode is valid")
 
 	_check(_any_contains(KeymapWriter.validate({"white": "Turbo"}), "Turbo"),
 		"an unknown Xbox name is rejected")
+	_check(_any_contains(KeymapWriter.validate({"joystick": "trackball"}), "trackball"),
+		"an unknown joystick mode is rejected")
+	_check(_any_contains(KeymapWriter.validate({"joystick": 3}), "not a string"),
+		"a non-string joystick mode is rejected")
 	_check(_any_contains(KeymapWriter.validate({"middle": "A"}), "middle"),
 		"an unknown cabinet button is rejected")
 	_check(_any_contains(KeymapWriter.validate({"white": 3}), "not a string"),
@@ -92,6 +98,9 @@ func _test_keymap_validation() -> void:
 	var json := KeymapWriter.to_json({"bottom_left": "RB", "top_left": "LB"})
 	_check(json.find("top_left") < json.find("bottom_left"),
 		"serialization follows the cabinet layout, got %s" % json)
+	var joystick_json := KeymapWriter.to_json({"white": "Start", "joystick": "dpad"})
+	_check(joystick_json.find("joystick") < joystick_json.find("white"),
+		"joystick mode is serialized before button mappings, got %s" % joystick_json)
 
 	var full := KeymapWriter.to_json(Cfg.LAUNCHER_KEYMAP)
 	var order := []

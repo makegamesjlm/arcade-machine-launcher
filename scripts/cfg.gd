@@ -32,6 +32,11 @@ const XBOX_BUTTONS: Array[String] = [
 	"Back", "Start", "Guide", "LS", "RS",
 ]
 
+## Ways shanwan-remap can expose each cabinet joystick to games.
+const JOYSTICK_MODES: Array[String] = [
+	"left_stick", "right_stick", "dpad",
+]
+
 ## Mapping restored whenever the launcher is on screen. It has to agree with the
 ## joypad buttons bound in the project input map: nav_select is joypad button 0
 ## (A) and nav_back is button 1 (B), so the bottom-right button confirms and the

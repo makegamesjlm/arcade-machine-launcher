@@ -19,12 +19,21 @@ static func validate(keymap: Dictionary) -> PackedStringArray:
 		if typeof(key) != TYPE_STRING:
 			problems.append("button name %s is not a string" % [key])
 			continue
+
+		var target: Variant = keymap[key]
+		if key == "joystick":
+			if typeof(target) != TYPE_STRING:
+				problems.append("\"joystick\" is %s, which is not a string" % [target])
+			elif not Cfg.JOYSTICK_MODES.has(target):
+				problems.append("unknown joystick mode \"%s\" (expected one of: %s)"
+					% [target, ", ".join(Cfg.JOYSTICK_MODES)])
+			continue
+
 		if not Cfg.CABINET_BUTTONS.has(key):
 			problems.append("unknown cabinet button \"%s\" (expected one of: %s)"
 				% [key, ", ".join(Cfg.CABINET_BUTTONS)])
 			continue
 
-		var target: Variant = keymap[key]
 		if typeof(target) != TYPE_STRING:
 			problems.append("\"%s\" maps to %s, which is not a string" % [key, target])
 			continue
@@ -45,6 +54,8 @@ static func validate(keymap: Dictionary) -> PackedStringArray:
 ## someone inspects it over SSH.
 static func to_json(keymap: Dictionary) -> String:
 	var ordered := {}
+	if keymap.has("joystick"):
+		ordered["joystick"] = keymap["joystick"]
 	for button in Cfg.CABINET_BUTTONS:
 		if keymap.has(button):
 			ordered[button] = keymap[button]
