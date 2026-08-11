@@ -138,8 +138,10 @@ func _start_process(game: GameEntry) -> void:
 
 ## Games expect to run with their own folder as the working directory (that is
 ## where their pck and assets live), but OS.create_process always inherits ours.
-## On Linux a tiny shell wrapper fixes that; `exec` means the pid we poll is the
-## game itself rather than a shell that outlives it.
+## On Linux a tiny shell wrapper fixes that and starts the game inside Gamescope,
+## whose compositor can keep the cursor hidden even though the game is a separate
+## process. `exec` means the pid we poll is Gamescope (or the direct fallback),
+## rather than a shell that outlives it.
 func _process_path(_game: GameEntry) -> String:
 	return "/bin/sh" if OS.has_feature("linux") else _game.executable
 
@@ -148,8 +150,19 @@ func _process_arguments(game: GameEntry) -> PackedStringArray:
 	if not OS.has_feature("linux"):
 		return game.args
 
-	const SCRIPT := "cd -- \"$1\" || exit 127\nexe=\"$2\"\nshift 2\nexec \"$exe\" \"$@\""
-	var argv := PackedStringArray(["-c", SCRIPT, "arcade-launcher", game.dir_path, game.executable])
+	const SCRIPT := ("cd -- \"$1\" || exit 127\n"
+		+ "exe=\"$2\"\nwidth=\"$3\"\nheight=\"$4\"\nshift 4\n"
+		+ "if command -v gamescope >/dev/null 2>&1; then\n"
+		+ "  exec gamescope -f --expose-wayland -W \"$width\" -H \"$height\" "
+		+ "-w \"$width\" -h \"$height\" --hide-cursor-delay 0 -- \"$exe\" \"$@\"\n"
+		+ "fi\n"
+		+ "echo '[launcher] warning: gamescope was not found; game cursor cannot be hidden' >&2\n"
+		+ "exec \"$exe\" \"$@\"")
+	var screen_size := DisplayServer.screen_get_size()
+	var argv := PackedStringArray([
+		"-c", SCRIPT, "arcade-launcher", game.dir_path, game.executable,
+		str(screen_size.x), str(screen_size.y),
+	])
 	argv.append_array(game.args)
 	return argv
 

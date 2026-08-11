@@ -129,7 +129,10 @@ screen; once a game is running it owns the controller.
    `/etc/shanwan-remap/keymap.json`.
 2. The launcher waits 2.2s for the remap service to hot-reload, so the game's
    first frame already has the right buttons.
-3. The launcher minimizes, drops to 5 FPS, and starts the executable.
+3. The launcher minimizes, drops to 5 FPS, and starts the executable fullscreen
+   inside Gamescope. Gamescope hides the mouse cursor immediately for the whole
+   game session. If Gamescope is unavailable, the executable is started directly
+   and a warning is written to the journal.
 4. It polls twice a second until the process is gone.
 5. The launcher's own keymap is restored, the window comes back to the
    foreground, and the games folder is rescanned.
