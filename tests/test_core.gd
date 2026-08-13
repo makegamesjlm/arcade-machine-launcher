@@ -110,6 +110,12 @@ func _test_keymap_validation() -> void:
 	var full := KeymapWriter.to_json(Cfg.LAUNCHER_KEYMAP)
 	var order := []
 	for button in Cfg.CABINET_BUTTONS:
+		# White is a cabinet button but deliberately not a *mapped* one - it is
+		# system-only and never forwarded to a game, so it is absent from
+		# LAUNCHER_KEYMAP by design and has nothing to find here. The ordering
+		# claim is about the buttons that do get emitted.
+		if not Cfg.LAUNCHER_KEYMAP.has(button):
+			continue
 		order.append(full.find("\"%s\"" % button))
 	var sorted_order := order.duplicate()
 	sorted_order.sort()

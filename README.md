@@ -135,7 +135,8 @@ is running, the system overlay is open, or attract mode is showing.
    `/etc/shanwan-remap/keymap.json`.
 2. The launcher waits 2.2s for the remap service to hot-reload, so the game's
    first frame already has the right buttons.
-3. The launcher minimizes, drops to 5 FPS, and starts the executable.
+3. The launcher drops to 5 FPS and starts the executable, letting the game's
+   own fullscreen window cover it (it never minimizes — see below).
 4. It polls twice a second until the process is gone.
 5. The launcher's own keymap is restored, the window comes back to the
    foreground, and the games folder is rescanned.
@@ -215,6 +216,34 @@ session never sees that variable and keeps the system's normal cursor. See
 `setup-arcade.sh`'s "cursor hiding" section for why this was chosen over
 routing games through a nested compositor such as Gamescope (tried once,
 reverted; see git history).
+
+## The launcher never minimizes
+
+While a game plays, the launcher drops to 5 FPS and lets the game's fullscreen
+window cover it. It does **not** minimize, and must not start doing so again.
+
+The cabinet runs Wayland (KDE Plasma 6 on Bazzite), where minimizing is a
+one-way door. `xdg-shell` gives a client `xdg_toplevel.set_minimized` and no
+matching unset — the protocol states plainly that there is no way to unset
+minimization on a surface, or even to ask whether a surface is minimized. Only
+the compositor can restore a minimized window. A launcher that minimizes
+itself when a game starts can therefore never bring itself back.
+
+That was the cause of the "white button freezes the game but the system
+overlay never appears" bug. Everything else in that path worked — the gate
+blocked, the game took its `SIGSTOP`, the overlay opened — but it opened on a
+window the client had no way of ever showing again, which is why the symptom
+read as a drawing or stacking problem rather than a window-state one.
+
+The tell, if it ever comes back: manually alt-tabbing to the launcher once
+makes the overlay work for the rest of the session. That is the compositor
+performing the un-minimize the client is not allowed to perform, and
+alt-tabbing back into the game restacks without re-minimizing.
+
+`main.gd` logs the display backend at startup (`display server=… session=…`);
+check it first if window behaviour is ever in question, since none of the X11
+escape hatches — `wmctrl`, `_NET_WM_STATE_ABOVE`, self-raising — exist under
+Wayland.
 
 ## Development
 

@@ -3,7 +3,7 @@ extends RefCounted
 ## Adjusts the cabinet's system output volume from the launcher menu.
 ##
 ## The menu is the only place this can run: while a game is on screen the
-## launcher is minimized and the controller belongs to the game. On the cabinet
+## launcher is covered and the controller belongs to the game. On the cabinet
 ## (PipeWire on Bazzite) the level goes through `wpctl`, with `pactl` as a
 ## fallback. On a dev box that has neither, a simulated level is kept so the
 ## on-screen bar can still be exercised.
