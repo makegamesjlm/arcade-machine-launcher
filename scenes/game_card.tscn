@@ -1,18 +1,19 @@
-[gd_scene load_steps=5 format=3 uid="uid://bcard0arcade01"]
+[gd_scene load_steps=6 format=3 uid="uid://bcard0arcade01"]
 
 [ext_resource type="Script" path="res://scripts/game_card.gd" id="1_card"]
+[ext_resource type="FontVariation" path="res://theme/fonts/handjet_bold.tres" id="2_bold_font"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_normal"]
 content_margin_left = 0.0
 content_margin_top = 0.0
 content_margin_right = 0.0
 content_margin_bottom = 0.0
-bg_color = Color(0.086, 0.09, 0.137, 1)
+bg_color = Color(0.118, 0.102, 0.239, 1)
 border_width_left = 3
 border_width_top = 3
 border_width_right = 3
 border_width_bottom = 3
-border_color = Color(0.169, 0.176, 0.251, 1)
+border_color = Color(0.196, 0.173, 0.369, 1)
 corner_radius_top_left = 16
 corner_radius_top_right = 16
 corner_radius_bottom_right = 16
@@ -23,21 +24,21 @@ content_margin_left = 0.0
 content_margin_top = 0.0
 content_margin_right = 0.0
 content_margin_bottom = 0.0
-bg_color = Color(0.129, 0.141, 0.224, 1)
+bg_color = Color(0.153, 0.129, 0.318, 1)
 border_width_left = 3
 border_width_top = 3
 border_width_right = 3
 border_width_bottom = 3
-border_color = Color(0.208, 0.89, 0.89, 1)
+border_color = Color(0.933, 0.867, 0.518, 1)
 corner_radius_top_left = 16
 corner_radius_top_right = 16
 corner_radius_bottom_right = 16
 corner_radius_bottom_left = 16
-shadow_color = Color(0.208, 0.89, 0.89, 0.298)
+shadow_color = Color(0.933, 0.867, 0.518, 0.298)
 shadow_size = 22
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_iconframe"]
-bg_color = Color(0.055, 0.059, 0.094, 1)
+bg_color = Color(0.059, 0.051, 0.133, 1)
 corner_radius_top_left = 10
 corner_radius_top_right = 10
 corner_radius_bottom_right = 10
@@ -90,7 +91,8 @@ vertical_alignment = 1
 [node name="Title" type="Label" parent="Margin/Body"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.949, 0.949, 0.969, 1)
+theme_override_colors/font_color = Color(0.969, 0.953, 0.902, 1)
+theme_override_fonts/font = ExtResource("2_bold_font")
 theme_override_font_sizes/font_size = 28
 text = "Game"
 horizontal_alignment = 1
@@ -101,7 +103,7 @@ text_overrun_behavior = 3
 [node name="Players" type="Label" parent="Margin/Body"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.541, 0.541, 0.639, 1)
+theme_override_colors/font_color = Color(0.655, 0.624, 0.788, 1)
 theme_override_font_sizes/font_size = 19
 text = "1 player"
 horizontal_alignment = 1

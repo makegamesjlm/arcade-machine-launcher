@@ -209,3 +209,10 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scenes/` | `main.tscn`, `game_card.tscn` |
 | `scripts/setup-arcade.sh` | One-time cabinet permissions setup |
 | `systemd/` | User unit and install notes |
+| `theme/fonts/` | Handjet font variations used by the UI |
+| `assets/fonts/` | Bundled Handjet variable font and its license |
+
+## Credits
+
+UI text is set in [Handjet](https://github.com/rosettatype/Handjet), licensed
+under the SIL Open Font License 1.1 (see `assets/fonts/OFL.txt`).

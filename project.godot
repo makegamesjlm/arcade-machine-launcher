@@ -13,13 +13,17 @@ config_version=5
 config/name="ArcadeMachineLauncher"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
-boot_splash/bg_color=Color(0.05, 0.05, 0.08, 1)
+boot_splash/bg_color=Color(0.082, 0.071, 0.169, 1)
 boot_splash/show_image=false
 config/icon="res://icon.svg"
 
 [autoload]
 
 Cfg="*res://scripts/cfg.gd"
+
+[gui]
+
+theme/custom_font="res://theme/fonts/handjet_regular.tres"
 
 [display]
 
@@ -104,4 +108,4 @@ volume_mute={
 
 renderer/rendering_method="mobile"
 rendering_device/driver.windows="d3d12"
-environment/defaults/default_clear_color=Color(0.05, 0.05, 0.08, 1)
+environment/defaults/default_clear_color=Color(0.082, 0.071, 0.169, 1)
