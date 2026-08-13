@@ -67,11 +67,21 @@ test -f ~/Nextcloud/Games/neon-drift/game.json
 test -x ~/Nextcloud/Games/neon-drift/game.x86_64
 ```
 
-Use the cabinet's white button to rescan the games folder; the launcher service
-does not need to be restarted. Launch the game through the arcade launcher for the smoke
-test, then verify that it reaches its menu, accepts both cabinet controllers as
-appropriate, fills the display, and exits cleanly back to the launcher. Check
-`journalctl --user -u arcade-launcher.service` if it does not appear or start.
+Open the system overlay (white button) and pick **Refresh** to rescan the games
+folder; the launcher service does not need to be restarted. Launch the game
+through the arcade launcher for the smoke test, then verify that it reaches
+its menu, accepts both cabinet controllers as appropriate, fills the display,
+shows no mouse cursor at any point, and exits cleanly back to the launcher.
+Check `journalctl --user -u arcade-launcher.service` if it does not appear or
+start.
+
+While it is running, also smoke-test the system overlay itself: press white,
+confirm the game's frame freezes and stays visible under the dim overlay,
+that the game never sees the white press or any overlay navigation, and that
+each of Continue / Send pause / Back to launcher / Close game / Sleep does
+what it says (see the main README's "The white button and the system
+overlay"). Confirm a game held via Back to launcher shows a badge on its grid
+tile and resumes instantly when reselected.
 
 ## Notes
 

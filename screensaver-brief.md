@@ -21,6 +21,11 @@ This is intentionally an MVP. Prioritize clarity and readability over elaborate 
 - Silent (no audio)
 - Native arcade monitor resolution
 - Continuous seamless loop
+- **Must be encoded as Ogg Theora (`.ogv`)** — Godot 4's VideoStreamPlayer
+  decodes nothing else. Deliver the finished file to
+  `~/Nextcloud/Arcade/attract.ogv` on the cabinet (path overridable with
+  `--attract-video=` / `ARCADE_ATTRACT_VIDEO`); a missing or wrong-format file
+  falls back to a built-in static screen rather than showing black.
 
 ---
 
@@ -116,7 +121,7 @@ Display a prominent QR code alongside this section.
 
 The QR should link to
 
-httpsmakegamesjlm.com
+https://makegamesjlm.com
 
 (Website functions as the community link hub.)
 
@@ -200,4 +205,3 @@ Requirements
 - The screen should feel like part of the arcade, not a corporate advertisement.
 - Avoid clutter.
 - Use subtle arcade-inspired visual elements, but let the typography do most of the communication.
-```

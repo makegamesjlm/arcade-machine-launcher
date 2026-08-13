@@ -84,6 +84,11 @@ names an unknown button is **rejected whole** — the game still appears and is
 still playable, but the launcher will not install a mapping it knows the service
 would choke on, and says so in the amber strip at the bottom of the screen.
 
+`white` is reserved: shanwan-remap never forwards it to a game in any mode,
+whatever a keymap says (see "The white button and the system overlay" below).
+Mapping it to `Start` here is still worth doing — it is what a game's own pause
+menu opens on when the player picks **Send pause** from the system overlay.
+
 ## Cabinet setup
 
 On a fresh cabinet, one script runs every step below in order — permissions, the
@@ -118,14 +123,15 @@ Then build and install the service: [systemd/README-service.md](systemd/README-s
 | Input | Action |
 | --- | --- |
 | Joystick / d-pad | Move around the grid |
-| Bottom-right button | Play the selected game |
-| Bottom-middle button | Dismiss an error |
+| Bottom-right button | Play the selected game, or confirm in the system overlay |
+| Bottom-middle button | Dismiss an error, or Continue in the system overlay |
 | Top-left / Top-right button | System volume down / up |
 | Top-middle button | Mute toggle |
-| White button | Rescan the games folder |
+| White button | Open the system overlay |
 
-Either controller can drive the menu. Volume and mute work only on the menu
-screen; once a game is running it owns the controller.
+Either controller can drive the menu. Volume, mute, and the plain shortcuts
+above all work only while the grid is the active surface — not while a game
+is running, the system overlay is open, or attract mode is showing.
 
 ## What happens on select
 
@@ -139,7 +145,75 @@ screen; once a game is running it owns the controller.
    foreground, and the games folder is rescanned.
 
 A game that exits non-zero within 2 seconds is reported as a failed launch
-rather than a finished session.
+rather than a finished session. (Steps 4-5 do not run for a game that is
+merely held rather than actually finished — see below.)
+
+## The white button and the system overlay
+
+White is a system button, not a game button: shanwan-remap never writes it to
+the virtual pad, so a game never sees it on its own, no matter what any
+keymap says. Pressing it always opens a two-row overlay over whatever was on
+screen (the game keeps running, but freezes for the duration — see below):
+
+Row 1 (varies by context):
+
+| Context | Items |
+| --- | --- |
+| A game is running | Continue · Send pause · Back to launcher · Close game · Sleep |
+| Menu, nothing held | Continue · Refresh · Sleep |
+| Menu, a game held | Continue · Close game · Refresh · Sleep |
+
+Row 2 is always **Mute · Volume down · Volume up**, and acts immediately
+without closing the overlay.
+
+- **Continue** resumes the game (or closes the overlay on the menu) exactly
+  where it was.
+- **Send pause** resumes the game and then sends the white press through to
+  it, so the game's own keymap-mapped pause/settings menu opens.
+- **Back to launcher** leaves the game held, frozen, in the background and
+  shows the grid; selecting that game again resumes it.
+- **Close game** shuts it down completely.
+- **Sleep** enters attract mode immediately.
+- The bottom-middle button and a second white press both mean Continue.
+
+Navigation is by joystick; the bottom-right button confirms, exactly like the
+main grid.
+
+## Held games
+
+Only one game is ever held. Selecting a different game while one is held
+closes the held one first — a public cabinet must not become un-startable by
+someone who does not understand the badge. The grid marks a held game with a
+badge and its detail text says it will resume rather than restart.
+
+## Attract mode
+
+A looping, silent idle video plays after 120 seconds on the menu, or 300
+seconds while a game is being played (so a player thinking about a puzzle
+is not yanked out after two minutes) - either way pulled from
+`~/Nextcloud/Arcade/attract.ogv` (override with `--attract-video` /
+`ARCADE_ATTRACT_VIDEO`), Ogg Theora only, since that is all Godot 4 decodes.
+A missing or unreadable file falls back to a built-in static screen. Content
+is specified in `screensaver-brief.md`.
+
+Pressing any button always wakes it back to the launcher - the menu, or the
+held-menu if a game is parked - never back into a game. If a game was
+running when attract started, it stays alive, held, in the background.
+
+## Idle kill
+
+After 30 minutes with no input at all, whatever game is running or held is
+killed, so the cabinet does not run unattended overnight. Nothing else
+happens at that mark: no display blanking, and the attract video (if already
+looping) keeps looping right through it.
+
+## Cursor hiding
+
+The cabinet has no mouse, so any visible cursor is a stray one. `setup-arcade.sh`
+installs a fully transparent Xcursor theme (`arcade-blank`) for the arcade user
+and points the session at it - see its "cursor hiding" section for exactly what
+that covers and why it was chosen over routing games through a nested
+compositor such as Gamescope (tried once, reverted; see git history).
 
 ## Development
 
@@ -149,8 +223,14 @@ The launcher can run on a desktop against fake games. Paths are overridable:
 godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json
 ```
 
-`--games-dir`, `--keymap-path` and `--no-fullscreen` also read from
-`ARCADE_GAMES_DIR` and `ARCADE_KEYMAP_PATH`.
+`--games-dir`, `--keymap-path`, `--attract-video` and `--no-fullscreen` also
+read from `ARCADE_GAMES_DIR`, `ARCADE_KEYMAP_PATH` and `ARCADE_ATTRACT_VIDEO`.
+
+The system overlay, attract mode, and held games all depend on
+shanwan-remap's control channel (see shanwan-remap/README.md), which has
+nothing to connect to on a dev box. Without it the launcher falls back to
+plain Godot input for the grid and skips those features rather than hanging;
+they can only be exercised on the cabinet.
 
 `dev/games/` holds fixtures, including deliberately broken ones (invalid JSON,
 missing binary, a keymap with bad button names) to exercise the error paths.
@@ -188,8 +268,10 @@ godot --headless --path . res://tests/test_core.tscn
 godot --headless --path . res://tests/test_simulated_launch.tscn
 ```
 
-Covers the scanner, keymap validation, atomic install, and all three simulated
-launch outcomes. Exits non-zero on failure.
+Covers the scanner, keymap validation, atomic install, the Xbox-to-joypad
+button table InputRouter depends on, the system overlay's navigation, and all
+three simulated launch outcomes. Exits non-zero on failure. shanwan-remap has
+its own `pytest` suite - see shanwan-remap/README.md.
 
 ### Screenshots
 
@@ -204,8 +286,16 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/cfg.gd` | Autoloaded paths and constants, including the launcher's own keymap |
 | `scripts/game_scanner.gd` | `/games` → `GameEntry` objects, with errors and warnings |
 | `scripts/keymap_writer.gd` | Keymap validation and the atomic install |
-| `scripts/game_launcher.gd` | The launch → play → return cycle |
-| `scripts/main.gd` | Grid, navigation, overlays |
-| `scenes/` | `main.tscn`, `game_card.tscn` |
-| `scripts/setup-arcade.sh` | One-time cabinet permissions setup |
+| `scripts/game_launcher.gd` | The launch → play → return cycle, plus freeze/hold/close |
+| `scripts/arcade_bus.gd` | Client for shanwan-remap's control channel (autoload `Bus`) |
+| `scripts/input_router.gd` | Feeds control-channel events into Godot's Input while blocked |
+| `scripts/idle_tracker.gd` | Attract/idle-kill thresholds (autoload `Idle`) |
+| `scripts/session_controller.gd` | State machine for the system overlay, attract mode, held games |
+| `scripts/system_overlay.gd`, `scripts/attract_screen.gd` | The two on top of everything else |
+| `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
+| `scripts/main.gd` | Grid, navigation, the launch-progress overlay, volume HUD |
+| `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
+| `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor theme |
+| `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |
+| `scripts/install-git-hooks.sh`, `.ps1` | Enables the build-number pre-commit hook |
 | `systemd/` | User unit and install notes |

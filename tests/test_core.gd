@@ -16,6 +16,10 @@ func _ready() -> void:
 	_test_keymap_install()
 	_test_volume_input_mapping()
 	_test_volume_parsing()
+	_test_white_is_a_system_button()
+	_test_xbox_to_joy_button_table()
+	_test_idle_thresholds()
+	_test_system_overlay_navigation()
 
 	print("\n%d checks, %d failed" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -184,6 +188,80 @@ func _test_volume_parsing() -> void:
 
 	_check(VolumeControl.parse_pactl_mute("Mute: yes") and not VolumeControl.parse_pactl_mute("Mute: no"),
 		"pactl mute state is read")
+
+
+func _test_white_is_a_system_button() -> void:
+	print("\n-- white is a system button")
+	_check(not Cfg.LAUNCHER_KEYMAP.has("white"),
+		"white is absent from the launcher's own keymap, got %s" % [Cfg.LAUNCHER_KEYMAP])
+
+
+func _test_xbox_to_joy_button_table() -> void:
+	print("\n-- xbox -> joypad button table")
+	for xbox_name in Cfg.XBOX_BUTTONS:
+		_check(Cfg.XBOX_TO_JOY_BUTTON.has(xbox_name),
+			"%s has a joypad button, so InputRouter can route it" % xbox_name)
+
+	# These must agree with project.godot's [input] section - InputRouter
+	# reconstructs exactly the events these actions are bound to.
+	var expected := {
+		"A": JOY_BUTTON_A, "B": JOY_BUTTON_B,
+		"X": JOY_BUTTON_X, "Y": JOY_BUTTON_Y,
+		"LB": JOY_BUTTON_LEFT_SHOULDER, "RB": JOY_BUTTON_RIGHT_SHOULDER,
+		"Start": JOY_BUTTON_START,
+	}
+	for xbox_name: String in expected:
+		_check(Cfg.XBOX_TO_JOY_BUTTON[xbox_name] == expected[xbox_name],
+			"%s maps to joypad button %d, got %s"
+				% [xbox_name, expected[xbox_name], Cfg.XBOX_TO_JOY_BUTTON.get(xbox_name)])
+
+
+func _test_idle_thresholds() -> void:
+	print("\n-- idle thresholds")
+	_check(Cfg.ATTRACT_MENU_SECONDS < Cfg.ATTRACT_GAME_SECONDS,
+		"the menu attract timeout is shorter than the in-game one, got %s < %s"
+			% [Cfg.ATTRACT_MENU_SECONDS, Cfg.ATTRACT_GAME_SECONDS])
+	_check(Cfg.ATTRACT_GAME_SECONDS < Cfg.IDLE_KILL_SECONDS,
+		"the idle-kill timeout is longer than either attract timeout, got %s < %s"
+			% [Cfg.ATTRACT_GAME_SECONDS, Cfg.IDLE_KILL_SECONDS])
+
+
+func _test_system_overlay_navigation() -> void:
+	print("\n-- system overlay navigation")
+	var overlay: SystemOverlay = load("res://scenes/system_overlay.tscn").instantiate()
+	add_child(overlay)
+
+	overlay.open(SystemOverlay.Context.PLAYING)
+	_check(overlay._rows[0].size() == 5,
+		"PLAYING context has 5 row-1 items, got %d" % overlay._rows[0].size())
+	_check(overlay._row == 0 and overlay._col == 0, "opens focused on row 0, col 0 (Continue)")
+
+	for i in 5:
+		overlay.move(1, 0)
+	_check(overlay._col == 0, "left/right wraps within a row, got col %d" % overlay._col)
+
+	for i in 4:
+		overlay.move(1, 0)
+	_check(overlay._col == 4, "moved to the last row-1 item (Sleep)")
+
+	# Row 1 has 5 items in PLAYING; row 2 always has 3 - moving down from the
+	# last column must clamp onto row 2's shorter row, not wrap or crash.
+	overlay.move(0, 1)
+	_check(overlay._row == 1 and overlay._col == 2,
+		"moving down from col 4 clamps into row 2's shorter row, got row %d col %d"
+			% [overlay._row, overlay._col])
+
+	overlay.open(SystemOverlay.Context.MENU_IDLE)
+	_check(overlay._rows[0].size() == 3,
+		"MENU_IDLE context has 3 row-1 items, got %d" % overlay._rows[0].size())
+	_check(overlay._row == 0 and overlay._col == 0, "reopening refocuses row 0, col 0")
+
+	var activated := []
+	overlay.item_activated.connect(func(item: int) -> void: activated.append(item))
+	overlay.continue_shortcut()
+	_check(activated == [SystemOverlay.Item.CONTINUE], "continue_shortcut always reports CONTINUE, got %s" % [activated])
+
+	overlay.queue_free()
 
 
 func _any_contains(haystack: PackedStringArray, needle: String) -> bool:

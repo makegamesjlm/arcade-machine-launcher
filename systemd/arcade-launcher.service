@@ -8,6 +8,12 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
+# The cabinet has no mouse; this points every client at the transparent
+# cursor theme setup-arcade.sh installs (see its "cursor hiding" section).
+# Games inherit it too, since OS.create_process on Linux inherits the
+# launcher's environment and the shell wrapper it starts them through does
+# not touch it.
+Environment=XCURSOR_THEME=arcade-blank
 ExecStart=/opt/arcade-launcher/arcade-launcher
 WorkingDirectory=/opt/arcade-launcher
 
