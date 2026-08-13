@@ -20,12 +20,15 @@ config/icon="res://icon.svg"
 [autoload]
 
 Cfg="*res://scripts/cfg.gd"
+Bus="*res://scripts/arcade_bus.gd"
+Idle="*res://scripts/idle_tracker.gd"
 
 [display]
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
 window/size/mode=3
+window/size/transparent=true
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
@@ -105,3 +108,4 @@ volume_mute={
 renderer/rendering_method="mobile"
 rendering_device/driver.windows="d3d12"
 environment/defaults/default_clear_color=Color(0.05, 0.05, 0.08, 1)
+viewport/transparent_background=true

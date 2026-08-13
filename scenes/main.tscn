@@ -1,6 +1,9 @@
-[gd_scene load_steps=5 format=3 uid="uid://bmain0arcade01"]
+[gd_scene load_steps=8 format=3 uid="uid://bmain0arcade01"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/session_controller.gd" id="2_session"]
+[ext_resource type="PackedScene" path="res://scenes/system_overlay.tscn" id="3_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/attract.tscn" id="4_attract"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_detail"]
 bg_color = Color(0.086, 0.09, 0.137, 1)
@@ -40,6 +43,7 @@ grow_vertical = 2
 script = ExtResource("1_main")
 
 [node name="Background" type="ColorRect" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -49,6 +53,7 @@ grow_vertical = 2
 color = Color(0.043, 0.043, 0.071, 1)
 
 [node name="Layout" type="MarginContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -184,7 +189,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.435, 0.435, 0.522, 1)
 theme_override_font_sizes/font_size = 20
-text = "Joystick — Browse      Bottom-right — Play      Top-left / Top-right — Volume      Top-middle — Mute      White — Refresh"
+text = "Joystick — Browse      Bottom-right — Play      Top-left / Top-right — Volume      Top-middle — Mute      White — System menu"
 horizontal_alignment = 1
 
 [node name="Overlay" type="ColorRect" parent="."]
@@ -288,3 +293,13 @@ theme_override_font_sizes/font_size = 24
 text = "50%"
 horizontal_alignment = 2
 vertical_alignment = 1
+
+[node name="SessionController" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("2_session")
+
+[node name="SystemOverlay" parent="SessionController" instance=ExtResource("3_overlay")]
+unique_name_in_owner = true
+
+[node name="AttractScreen" parent="SessionController" instance=ExtResource("4_attract")]
+unique_name_in_owner = true

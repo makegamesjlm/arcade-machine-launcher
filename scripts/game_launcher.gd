@@ -1,13 +1,28 @@
 class_name GameLauncher
 extends Node
-## Owns the launch -> play -> return cycle for one game at a time.
+## Owns the launch -> play -> return cycle for one game at a time, plus
+## freezing it in the background (held) instead of ending the session.
 ##
-## Sequence:
+## Normal sequence:
 ##   1. install the game's keymap.json at Cfg.keymap_path
 ##   2. wait out the remap service's reload window
 ##   3. start the executable and step out of the way (minimized, near-idle)
 ##   4. poll until the process is gone
 ##   5. restore the launcher's own keymap and come back to the foreground
+##
+## SessionController (see session_controller.gd) is the only caller and owns
+## the surrounding sequencing - gating physical input through Bus.set_mode()
+## before freeze()/hold() and after thaw()/resume_held(), so nothing queued
+## on the game's controller fd replays the instant it resumes. GameLauncher
+## itself only touches the process; it never touches the control channel.
+##
+## One nuance left to SessionController: closing a *held* game to make room
+## for a different selection (see hold()) still runs through close_held(),
+## which still fires `finished`/`failed` once the process actually exits.
+## That is convenient for keymap/state cleanup (see _poll_process()) but
+## means a caller that is about to launch a different game right afterwards
+## should not also run whatever UI transition normally accompanies "a game
+## session ended", or the two will visibly collide.
 
 signal preparing(game: GameEntry)
 signal started(game: GameEntry)
@@ -15,6 +30,10 @@ signal started(game: GameEntry)
 signal finished(game: GameEntry, exit_code: int)
 ## The game never got as far as running, or died on the launch pad.
 signal failed(game: GameEntry, reason: String)
+## A *held* game's process disappeared on its own - the compositor or the
+## OOM killer took it, not a deliberate close_held(). Survivable: state is
+## already cleared by the time this fires, same as finished/failed.
+signal held_game_vanished(game: GameEntry)
 
 ## Outcomes available to the interactive development simulator. Ignored unless
 ## Cfg.simulate_launch was enabled explicitly on the command line.
@@ -37,14 +56,34 @@ const BACKGROUND_MAX_FPS := 5
 const SIMULATED_PREPARE_SECONDS := 0.45
 const SIMULATED_CRASH_SECONDS := 1.0
 
+## Grace period between SIGTERM and SIGKILL when closing a game outright.
+const CLOSE_GRACE_SECONDS := 2.0
+
 var is_busy: bool:
 	get: return _current != null
+
+## True while the current game's process exists but is frozen (SIGSTOP'd)
+## and parked in the background - see hold(). The poll timer keeps running
+## the whole time, so a held game that disappears on its own is still
+## noticed (held_game_vanished) rather than silently forgotten.
+var is_held: bool:
+	get: return _held
+
+## The held game, or null if nothing is held. Distinct from is_busy, which
+## is also true for a game that is actually running in the foreground.
+var held_game: GameEntry:
+	get: return _current if _held else null
 
 var _current: GameEntry = null
 var _pid: int = -1
 var _started_at_msec: int = 0
 var _poll_timer: Timer
 var _simulated_can_finish := false
+var _held := false
+## Set by close()/close_held() before signalling the process, so the poll
+## loop can tell a deliberate shutdown apart from a held game that vanished
+## on its own (see held_game_vanished).
+var _closing := false
 
 
 func _ready() -> void:
@@ -122,11 +161,11 @@ func finish_simulated_session() -> bool:
 
 
 func _start_process(game: GameEntry) -> void:
-	_go_to_background()
+	go_to_background()
 
 	var pid := OS.create_process(_process_path(game), _process_arguments(game))
 	if pid < 0:
-		_return_to_foreground()
+		return_to_foreground()
 		_fail("cannot execute %s" % game.executable)
 		return
 
@@ -154,6 +193,11 @@ func _process_arguments(game: GameEntry) -> PackedStringArray:
 	return argv
 
 
+## OS.is_process_running() is true for a stopped-but-not-exited process too
+## (SIGSTOP does not end it), so polling needs no special case for a held
+## game: this only ever fires once the process has actually gone away,
+## whether that is a normal exit, a deliberate close(), or a held game that
+## vanished on its own.
 func _poll_process() -> void:
 	if _pid < 0 or OS.is_process_running(_pid):
 		return
@@ -161,15 +205,24 @@ func _poll_process() -> void:
 	_poll_timer.stop()
 	var exit_code := OS.get_process_exit_code(_pid)
 	var ran_for_msec := Time.get_ticks_msec() - _started_at_msec
-	_pid = -1
+	var game := _current
+	var was_held := _held
+	var was_closing := _closing
 
-	_return_to_foreground()
+	_pid = -1
+	_current = null
+	_held = false
+	_closing = false
+
+	if was_held and not was_closing:
+		apply_launcher_keymap()
+		held_game_vanished.emit(game)
+		return
+
+	return_to_foreground()
 	var keymap_error := apply_launcher_keymap()
 	if not keymap_error.is_empty():
 		push_error("[launcher] could not restore the launcher keymap: " + keymap_error)
-
-	var game := _current
-	_current = null
 
 	if ran_for_msec < int(CRASH_WINDOW_SECONDS * 1000.0) and exit_code != 0:
 		failed.emit(game, "%s exited immediately with code %d" % [game.name, exit_code])
@@ -177,12 +230,97 @@ func _poll_process() -> void:
 		finished.emit(game, exit_code)
 
 
-func _go_to_background() -> void:
+## Sends SIGSTOP to the game's own process. Signals the pid directly, never
+## a process group: OS.create_process does not setsid, so the game shares
+## the launcher's group, and `kill -STOP -<pgid>` would freeze the launcher
+## along with it. A game that forks helper processes only has its main
+## process frozen - a documented limitation, not a bug, for the
+## single-binary indie builds GAME_SUBMISSION.md asks for.
+func freeze() -> void:
+	if _pid >= 0:
+		OS.execute("kill", ["-STOP", str(_pid)])
+
+
+func thaw() -> void:
+	if _pid >= 0:
+		OS.execute("kill", ["-CONT", str(_pid)])
+
+
+## Parks the current game, frozen, in the background, and marks it held. The
+## caller (SessionController) is responsible for the surrounding sequence -
+## blocking physical input before this, and for bringing the launcher's own
+## window back to the foreground, which this does not touch.
+func hold() -> void:
+	if _current == null:
+		return
+	freeze()
+	_held = true
+
+
+## Un-freezes the held game. Does not touch window mode or FPS - the caller
+## is expected to bring the game back to the foreground itself, exactly as
+## it would for a freshly launched one.
+func resume_held() -> void:
+	if not _held:
+		return
+	_held = false
+	thaw()
+
+
+## Shuts the current game down completely, whether it is running or held
+## frozen, and waits for it to actually be gone - state cleanup, the keymap
+## restore, and the finished/failed signal all happen before this returns,
+## so a caller that awaits close_held() and then immediately launch()es a
+## different game never trips launch()'s is_busy guard.
+func close() -> void:
+	await _terminate_current()
+
+
+## Same as close(), but only acts if a game is actually held - so a caller
+## that just wants to make room for a different selection can call this
+## unconditionally without checking is_held first.
+func close_held() -> void:
+	if _held:
+		await _terminate_current()
+
+
+## SIGCONT before SIGTERM - a stopped process never runs its terminate
+## handler - then SIGKILL after a grace period if it still has not exited.
+## Polls in short slices rather than sleeping the whole grace period, since
+## most games die well before it: SIGTERM is nearly always enough.
+func _terminate_current() -> void:
+	if _pid < 0:
+		return
+	_closing = true
+	var pid := _pid
+	OS.execute("kill", ["-CONT", str(pid)])
+	OS.execute("kill", ["-TERM", str(pid)])
+
+	var elapsed := 0.0
+	while elapsed < CLOSE_GRACE_SECONDS and OS.is_process_running(pid):
+		await get_tree().create_timer(0.1).timeout
+		elapsed += 0.1
+	if OS.is_process_running(pid):
+		OS.execute("kill", ["-KILL", str(pid)])
+		await get_tree().create_timer(0.1).timeout  # let it land
+
+	# Short-circuit the poll timer rather than waiting up to
+	# PROCESS_POLL_SECONDS more for it to notice on its own; _poll_process()
+	# is idempotent (it no-ops once _pid has already been cleared), so it is
+	# safe to call here even if the timer's own tick fires around the same
+	# moment.
+	_poll_process()
+
+
+## Public: also used by SessionController around the overlay/attract cycle
+## (resuming into PLAYING, or freezing a game to show either on top of it),
+## not just internally around the launch/return cycle.
+func go_to_background() -> void:
 	Engine.max_fps = BACKGROUND_MAX_FPS
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED)
 
 
-func _return_to_foreground() -> void:
+func return_to_foreground() -> void:
 	Engine.max_fps = 0
 	DisplayServer.window_set_mode(
 		DisplayServer.WINDOW_MODE_FULLSCREEN if Cfg.fullscreen

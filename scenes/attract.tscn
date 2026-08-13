@@ -1,0 +1,78 @@
+[gd_scene load_steps=3 format=3 uid="uid://battract0arcade01"]
+
+[ext_resource type="Script" path="res://scripts/attract_screen.gd" id="1_attract"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bar"]
+bg_color = Color(0.208, 0.89, 0.89, 1)
+
+[node name="AttractScreen" type="CanvasLayer"]
+layer = 200
+script = ExtResource("1_attract")
+
+[node name="AttractVideo" type="VideoStreamPlayer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand = true
+autoplay = false
+loop = true
+volume_db = -80.0
+
+[node name="Fallback" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Background" type="ColorRect" parent="Fallback"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.043, 0.043, 0.071, 1)
+
+[node name="Center" type="CenterContainer" parent="Fallback"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Title" type="Label" parent="Fallback/Center"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.208, 0.89, 0.89, 1)
+theme_override_font_sizes/font_size = 64
+text = "MakeGamesJLM Arcade
+Play Jerusalem Games"
+horizontal_alignment = 1
+
+[node name="BottomBar" type="PanelContainer" parent="Fallback"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -90.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxFlat_bar")
+
+[node name="BottomLabel" type="Label" parent="Fallback/BottomBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.043, 0.043, 0.071, 1)
+theme_override_font_sizes/font_size = 30
+text = "PRESS ANY BUTTON TO BEGIN"
+horizontal_alignment = 1
+vertical_alignment = 1
