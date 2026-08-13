@@ -83,10 +83,15 @@ cp "$INSTALL_DIR/src/99-shanwan-remap.rules" /etc/udev/rules.d/
 udevadm control --reload-rules
 udevadm trigger
 
-# Enable and start
+# Enable and activate the newly installed code. `start` is a no-op when the
+# service is already running, so reinstalls must explicitly restart it.
 echo "[5/5] Enabling and starting service..."
 systemctl enable shanwan-remap.service
-systemctl start shanwan-remap.service
+if systemctl is-active --quiet shanwan-remap.service; then
+    systemctl restart shanwan-remap.service
+else
+    systemctl start shanwan-remap.service
+fi
 
 echo ""
 echo "=== Done! ==="

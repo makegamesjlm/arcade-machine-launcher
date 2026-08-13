@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 shanwan-remap: Remap the SHANWAN PS3/PC Gamepad joystick to the left stick,
-right stick, or one of two dpad representations, and remap buttons from
-cabinet.json + keymap.json.
+right stick, or dpad, and remap buttons from cabinet.json + keymap.json.
 
 Two config files:
   cabinet.json — maps physical button positions to evdev codes (set once per cabinet)
@@ -23,16 +22,6 @@ LOG = logging.getLogger("shanwan-remap")
 
 HAT_TO_AXIS = {-1: 0, 0: 127, 1: 255}
 
-DPAD_AXIS_BUTTONS = {
-    ecodes.ABS_HAT0X: (ecodes.BTN_DPAD_LEFT, ecodes.BTN_DPAD_RIGHT),
-    ecodes.ABS_HAT0Y: (ecodes.BTN_DPAD_UP, ecodes.BTN_DPAD_DOWN),
-}
-DPAD_BUTTONS = {
-    button
-    for axis_buttons in DPAD_AXIS_BUTTONS.values()
-    for button in axis_buttons
-}
-
 CONFIG_DIR = Path("/etc/shanwan-remap")
 CABINET_FILE = CONFIG_DIR / "cabinet.json"
 KEYMAP_FILE = CONFIG_DIR / "keymap.json"
@@ -40,6 +29,9 @@ KEYMAP_FILE = CONFIG_DIR / "keymap.json"
 # Xbox 360 controller IDs
 XBOX360_VENDOR = 0x045e
 XBOX360_PRODUCT = 0x028e
+# Match the standard Linux SDL Xbox 360 mapping. python-evdev's default version
+# of 1 selects an old mapping whose dpad directions are rotated/reversed.
+XBOX360_VERSION = 0x0114
 
 # Xbox button name → evdev code
 XBOX_NAME_TO_CODE = {
@@ -155,8 +147,8 @@ def build_capabilities(dev, button_map):
             new_abs.append((ecodes.ABS_HAT0X, HAT_INFO))     # dpad
             new_abs.append((ecodes.ABS_HAT0Y, HAT_INFO))
             caps[etype] = new_abs
-        elif etype == ecodes.EV_KEY:
-            mapped_buttons = set(DPAD_BUTTONS)
+        elif etype == ecodes.EV_KEY and button_map:
+            mapped_buttons = set()
             for code in ecodes_list:
                 if code in button_map:
                     mapped_buttons.add(button_map[code])
@@ -170,21 +162,12 @@ def build_capabilities(dev, button_map):
     return caps
 
 
-def write_dpad_buttons(ui, axis, value):
-    """Write canonical dpad-button events for one physical hat axis."""
-    negative_button, positive_button = DPAD_AXIS_BUTTONS[axis]
-    ui.write(ecodes.EV_KEY, negative_button, int(value < 0))
-    ui.write(ecodes.EV_KEY, positive_button, int(value > 0))
-
-
 def reset_joystick_outputs(ui):
     """Return every possible joystick output to its neutral state."""
     for axis in (ecodes.ABS_X, ecodes.ABS_Y, ecodes.ABS_RX, ecodes.ABS_RY):
         ui.write(ecodes.EV_ABS, axis, 127)
     for axis in (ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y):
         ui.write(ecodes.EV_ABS, axis, 0)
-    for button in DPAD_BUTTONS:
-        ui.write(ecodes.EV_KEY, button, 0)
     ui.syn()
 
 
@@ -195,7 +178,6 @@ class KeymapWatcher:
     LEFT_STICK = "left_stick"
     RIGHT_STICK = "right_stick"
     DPAD = "dpad"
-    DPAD_LEGACY = "dpad-legacy"
 
     def __init__(self, cabinet):
         self.cabinet = cabinet
@@ -260,7 +242,13 @@ def remap_single(event_path, name, watcher):
     button_map = watcher.get_button_map()
     caps = build_capabilities(dev, button_map)
 
-    ui = UInput(caps, name=name, vendor=XBOX360_VENDOR, product=XBOX360_PRODUCT)
+    ui = UInput(
+        caps,
+        name=name,
+        vendor=XBOX360_VENDOR,
+        product=XBOX360_PRODUCT,
+        version=XBOX360_VERSION,
+    )
     LOG.info("Created virtual device: %s", name)
     previous_joy_mode = watcher.get_joystick_mode()
 
@@ -285,9 +273,6 @@ def remap_single(event_path, name, watcher):
                         ui.syn()
                     elif joy_mode == KeymapWatcher.DPAD:
                         ui.write(ecodes.EV_ABS, event.code, event.value)
-                        ui.syn()
-                    elif joy_mode == KeymapWatcher.DPAD_LEGACY:
-                        write_dpad_buttons(ui, event.code, event.value)
                         ui.syn()
                 elif event.code in (ecodes.ABS_X, ecodes.ABS_Y):
                     continue  # drop original unused axes

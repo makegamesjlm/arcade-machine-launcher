@@ -68,13 +68,9 @@ one of these values:
 
 - `"left_stick"` — Xbox left analog stick (default; suitable for most games)
 - `"right_stick"` — Xbox right analog stick
-- `"dpad"` — digital d-pad reported as Linux hat axes (`ABS_HAT0X/Y`)
-- `"dpad-legacy"` — digital d-pad reported as Linux buttons (`BTN_DPAD_*`)
+- `"dpad"` — digital d-pad, compatible with standard gamepad APIs including SDL and Unity's `Gamepad.dpad`
 
-Games and input libraries differ in which d-pad representation they recognize.
-Try `"dpad"` first, then `"dpad-legacy"` if the game's normal gamepad d-pad controls
-do not respond. Each mode emits only its named representation. Omit `joystick`
-to retain the default `"left_stick"` behavior.
+Omit `joystick` to retain the default `"left_stick"` behavior.
 
 ## Before sending
 
