@@ -72,6 +72,16 @@ The dpad is emitted as Linux hat axes (`ABS_HAT0X/Y`) using the standard Xbox
 
 `A`, `B`, `X`, `Y`, `LB`, `RB`, `LT`, `RT`, `Back`, `Start`, `Guide`, `LS`, `RS`
 
+The virtual device always advertises the full, fixed 11-button set a real
+wired Xbox 360 pad has (plus both analog triggers), no matter which of them a
+given keymap actually uses. SDL and the gamepad APIs built on it (including
+Unity's) assign button *indices* by scanning the device's capabilities in
+order and looking up each index in a mapping table baked in for the Xbox 360;
+advertising a different set of buttons than a real pad shifts every button
+after the gap into the wrong index. `LT`/`RT` are emitted as full analog
+trigger pulls rather than key events, since a real Xbox 360 pad has no
+digital trigger buttons either.
+
 ## Launcher integration
 
 The arcade launcher swaps keymaps by writing to `/etc/shanwan-remap/keymap.json`. The service detects the change within 2 seconds and applies it automatically — no restart needed.

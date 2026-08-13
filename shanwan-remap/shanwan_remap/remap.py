@@ -33,7 +33,14 @@ XBOX360_PRODUCT = 0x028e
 # of 1 selects an old mapping whose dpad directions are rotated/reversed.
 XBOX360_VERSION = 0x0114
 
-# Xbox button name → evdev code
+# Xbox button name → evdev code. This is exactly the 11 digital buttons a
+# real wired Xbox 360 pad has — deliberately excluding LT/RT, which are
+# analog-only on real hardware (see XBOX_NAME_TO_TRIGGER_AXIS below). SDL
+# (and anything built on it, like Godot's and Unity's gamepad APIs) assigns
+# button *indices* by scanning the virtual device's advertised EV_KEY
+# capabilities in ascending code order, then looks up index N in a mapping
+# table baked in for this vendor/product/version. That table only makes
+# sense if the advertised codes are exactly this set — see build_capabilities.
 XBOX_NAME_TO_CODE = {
     "A":     ecodes.BTN_SOUTH,   # 304
     "B":     ecodes.BTN_EAST,    # 305
@@ -41,14 +48,27 @@ XBOX_NAME_TO_CODE = {
     "Y":     ecodes.BTN_WEST,    # 308
     "LB":    ecodes.BTN_TL,      # 310
     "RB":    ecodes.BTN_TR,      # 311
-    "LT":    ecodes.BTN_TL2,     # 312
-    "RT":    ecodes.BTN_TR2,     # 313
     "Back":  ecodes.BTN_SELECT,  # 314
     "Start": ecodes.BTN_START,   # 315
     "Guide": ecodes.BTN_MODE,    # 316
     "LS":    ecodes.BTN_THUMBL,  # 317
     "RS":    ecodes.BTN_THUMBR,  # 318
 }
+
+# The exact EV_KEY capability set the virtual device must always advertise —
+# see the comment on XBOX_NAME_TO_CODE above for why.
+XBOX360_BUTTON_CODES = sorted(XBOX_NAME_TO_CODE.values())
+
+# LT/RT have no digital button on real Xbox 360 hardware — they're reported as
+# full-range analog triggers (ABS_Z/ABS_RZ). A cabinet button mapped to "LT"
+# or "RT" is emitted as a full trigger pull instead of a key event, so it
+# never adds an extra code to the EV_KEY set above and never shifts any other
+# button's index.
+XBOX_NAME_TO_TRIGGER_AXIS = {
+    "LT": ecodes.ABS_Z,
+    "RT": ecodes.ABS_RZ,
+}
+TRIGGER_MAX = 255
 
 
 def load_cabinet():
@@ -86,8 +106,8 @@ def compose_button_map(cabinet, keymap):
         return {}
     button_map = {}
     for position, xbox_name in keymap.items():
-        if position == "joystick":
-            continue  # handled separately as joystick mode
+        if position == "joystick" or xbox_name in XBOX_NAME_TO_TRIGGER_AXIS:
+            continue  # joystick mode / LT & RT are handled separately
         source_code = cabinet.get(position)
         dest_code = XBOX_NAME_TO_CODE.get(xbox_name)
         if source_code is not None and dest_code is not None:
@@ -98,6 +118,24 @@ def compose_button_map(cabinet, keymap):
             LOG.warning("Xbox button '%s' not recognized, skipping", xbox_name)
     LOG.info("Composed button map: %d remappings", len(button_map))
     return button_map
+
+
+def compose_trigger_map(cabinet, keymap):
+    """Compose cabinet + keymap into {source_evdev_code: dest_abs_axis} for LT/RT."""
+    if not cabinet or not keymap:
+        return {}
+    trigger_map = {}
+    for position, xbox_name in keymap.items():
+        axis = XBOX_NAME_TO_TRIGGER_AXIS.get(xbox_name)
+        if axis is None:
+            continue
+        source_code = cabinet.get(position)
+        if source_code is not None:
+            trigger_map[source_code] = axis
+        else:
+            LOG.warning("Position '%s' not found in cabinet.json, skipping", position)
+    LOG.info("Composed trigger map: %d remappings", len(trigger_map))
+    return trigger_map
 
 
 def find_shanwan_devices():
@@ -117,10 +155,12 @@ def find_shanwan_devices():
     return devices
 
 
-def build_capabilities(dev, button_map):
-    """Build output device capabilities with all possible axes for hot-switching joystick mode."""
+def build_capabilities(dev):
+    """Build output device capabilities that always exactly match a real wired
+    Xbox 360 pad, for hot-switching joystick mode and remapping buttons."""
     STICK_INFO = AbsInfo(value=127, min=0, max=255, fuzz=0, flat=15, resolution=0)
     HAT_INFO = AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)
+    TRIGGER_INFO = AbsInfo(value=0, min=0, max=255, fuzz=0, flat=0, resolution=0)
 
     caps = {}
     for etype, ecodes_list in dev.capabilities(absinfo=True).items():
@@ -128,35 +168,33 @@ def build_capabilities(dev, button_map):
             continue
         if etype == ecodes.EV_ABS:
             new_abs = []
-            # Track which axes we've seen so we don't duplicate
-            seen_codes = set()
             for code, info in ecodes_list:
                 if code in (ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y,
-                            ecodes.ABS_X, ecodes.ABS_Y):
+                            ecodes.ABS_X, ecodes.ABS_Y,
+                            ecodes.ABS_RX, ecodes.ABS_RY,
+                            ecodes.ABS_Z, ecodes.ABS_RZ):
                     continue  # We'll add all of these ourselves below
                 else:
                     new_abs.append((code, info))
-                    seen_codes.add(code)
-            # Always advertise all axes so we can hot-switch modes
+            # Always advertise all axes so we can hot-switch modes and remap
+            # LT/RT, regardless of what the physical SHANWAN pad reports.
             new_abs.append((ecodes.ABS_X, STICK_INFO))       # left stick
             new_abs.append((ecodes.ABS_Y, STICK_INFO))
-            if ecodes.ABS_RX not in seen_codes:
-                new_abs.append((ecodes.ABS_RX, STICK_INFO))  # right stick
-            if ecodes.ABS_RY not in seen_codes:
-                new_abs.append((ecodes.ABS_RY, STICK_INFO))
+            new_abs.append((ecodes.ABS_RX, STICK_INFO))      # right stick
+            new_abs.append((ecodes.ABS_RY, STICK_INFO))
             new_abs.append((ecodes.ABS_HAT0X, HAT_INFO))     # dpad
             new_abs.append((ecodes.ABS_HAT0Y, HAT_INFO))
+            new_abs.append((ecodes.ABS_Z, TRIGGER_INFO))     # LT
+            new_abs.append((ecodes.ABS_RZ, TRIGGER_INFO))    # RT
             caps[etype] = new_abs
-        elif etype == ecodes.EV_KEY and button_map:
-            mapped_buttons = set()
-            for code in ecodes_list:
-                if code in button_map:
-                    mapped_buttons.add(button_map[code])
-                else:
-                    mapped_buttons.add(code)
-            for dst in button_map.values():
-                mapped_buttons.add(dst)
-            caps[etype] = sorted(mapped_buttons)
+        elif etype == ecodes.EV_KEY:
+            # Always advertise exactly these 11 codes - never more, never
+            # fewer - regardless of which of them this cabinet's keymap
+            # actually uses and regardless of what raw buttons the physical
+            # SHANWAN pad happens to report. See the comment on
+            # XBOX_NAME_TO_CODE for why any deviation breaks SDL/Unity's
+            # button mapping (this is what made "Start" never register).
+            caps[etype] = XBOX360_BUTTON_CODES
         else:
             caps[etype] = ecodes_list
     return caps
@@ -183,6 +221,7 @@ class KeymapWatcher:
         self.cabinet = cabinet
         keymap = load_keymap()
         self.button_map = compose_button_map(cabinet, keymap)
+        self.trigger_map = compose_trigger_map(cabinet, keymap)
         self.joystick_mode = keymap.get("joystick", self.LEFT_STICK)
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -198,6 +237,10 @@ class KeymapWatcher:
         with self._lock:
             return dict(self.button_map)
 
+    def get_trigger_map(self):
+        with self._lock:
+            return dict(self.trigger_map)
+
     def get_joystick_mode(self):
         with self._lock:
             return self.joystick_mode
@@ -205,9 +248,11 @@ class KeymapWatcher:
     def _reload(self):
         keymap = load_keymap()
         new_map = compose_button_map(self.cabinet, keymap)
+        new_trigger_map = compose_trigger_map(self.cabinet, keymap)
         new_mode = keymap.get("joystick", self.LEFT_STICK)
         with self._lock:
             self.button_map = new_map
+            self.trigger_map = new_trigger_map
             self.joystick_mode = new_mode
         LOG.info("Keymap reloaded: %d button remappings, joystick=%s", len(new_map), new_mode)
 
@@ -239,8 +284,7 @@ def remap_single(event_path, name, watcher):
     dev.grab()
     LOG.info("Grabbed %s", event_path)
 
-    button_map = watcher.get_button_map()
-    caps = build_capabilities(dev, button_map)
+    caps = build_capabilities(dev)
 
     ui = UInput(
         caps,
@@ -255,6 +299,7 @@ def remap_single(event_path, name, watcher):
     try:
         for event in dev.read_loop():
             current_map = watcher.get_button_map()
+            current_trigger_map = watcher.get_trigger_map()
             joy_mode = watcher.get_joystick_mode()
 
             if joy_mode != previous_joy_mode:
@@ -280,9 +325,14 @@ def remap_single(event_path, name, watcher):
                     ui.write(event.type, event.code, event.value)
                     ui.syn()
             elif event.type == ecodes.EV_KEY:
-                out_code = current_map.get(event.code, event.code)
-                ui.write(ecodes.EV_KEY, out_code, event.value)
-                ui.syn()
+                trigger_axis = current_trigger_map.get(event.code)
+                if trigger_axis is not None:
+                    ui.write(ecodes.EV_ABS, trigger_axis, TRIGGER_MAX if event.value else 0)
+                    ui.syn()
+                else:
+                    out_code = current_map.get(event.code, event.code)
+                    ui.write(ecodes.EV_KEY, out_code, event.value)
+                    ui.syn()
             elif event.type != ecodes.EV_SYN:
                 ui.write(event.type, event.code, event.value)
                 ui.syn()
