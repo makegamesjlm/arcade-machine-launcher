@@ -70,12 +70,8 @@ The optional `joystick` key controls what each cabinet joystick reports as:
 
 - `"left_stick"` — Xbox left analog stick (default; suitable for most games)
 - `"right_stick"` — Xbox right analog stick
-- `"dpad"` — digital d-pad reported as Linux hat axes (`ABS_HAT0X/Y`)
-- `"dpad-legacy"` — digital d-pad reported as Linux buttons (`BTN_DPAD_*`)
+- `"dpad"` — digital d-pad, compatible with standard gamepad APIs including SDL and Unity's `Gamepad.dpad`
 
-Games and input libraries differ in which d-pad representation they recognize.
-Try `"dpad"` first; if the game does not respond through its normal gamepad
-d-pad controls, try `"dpad-legacy"`. Each mode emits only its named representation.
 Omit `joystick` to retain the default `"left_stick"` behavior. The other keys
 map the cabinet's physical buttons.
 
@@ -299,3 +295,10 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |
 | `scripts/install-git-hooks.sh`, `.ps1` | Enables the build-number pre-commit hook |
 | `systemd/` | User unit and install notes |
+| `theme/fonts/` | Handjet font variations used by the UI |
+| `assets/fonts/` | Bundled Handjet variable font and its license |
+
+## Credits
+
+UI text is set in [Handjet](https://github.com/rosettatype/Handjet), licensed
+under the SIL Open Font License 1.1 (see `assets/fonts/OFL.txt`).

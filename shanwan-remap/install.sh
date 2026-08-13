@@ -23,8 +23,14 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 
-# Install build deps on regular Fedora
-if command -v dnf &>/dev/null; then
+# Install build deps on regular Fedora. Bazzite and other Fedora Atomic hosts
+# expose a dnf compatibility/helper command even though packages are managed by
+# rpm-ostree. Invoking that helper can open a documentation page and block this
+# installer until the browser closes. The cabinet image already includes the
+# Python tooling needed below, so do not invoke dnf on an immutable host.
+if command -v rpm-ostree &>/dev/null; then
+    echo "[0/5] Immutable rpm-ostree host detected; skipping dnf dependencies."
+elif command -v dnf &>/dev/null; then
     echo "[0/5] Ensuring build dependencies..."
     dnf install -y python3-pip python3-devel gcc 2>/dev/null || true
 fi
@@ -83,10 +89,15 @@ cp "$INSTALL_DIR/src/99-shanwan-remap.rules" /etc/udev/rules.d/
 udevadm control --reload-rules
 udevadm trigger
 
-# Enable and start
+# Enable and activate the newly installed code. `start` is a no-op when the
+# service is already running, so reinstalls must explicitly restart it.
 echo "[5/5] Enabling and starting service..."
 systemctl enable shanwan-remap.service
-systemctl start shanwan-remap.service
+if systemctl is-active --quiet shanwan-remap.service; then
+    systemctl restart shanwan-remap.service
+else
+    systemctl start shanwan-remap.service
+fi
 
 echo ""
 echo "=== Done! ==="

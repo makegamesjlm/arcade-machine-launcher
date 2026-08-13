@@ -1,14 +1,15 @@
-[gd_scene load_steps=3 format=3 uid="uid://boverlay0arcade01"]
+[gd_scene load_steps=4 format=3 uid="uid://boverlay0arcade01"]
 
 [ext_resource type="Script" path="res://scripts/system_overlay.gd" id="1_overlay"]
+[ext_resource type="FontVariation" path="res://theme/fonts/handjet_bold.tres" id="2_bold_font"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
-bg_color = Color(0.086, 0.09, 0.137, 0.98)
+bg_color = Color(0.118, 0.102, 0.239, 0.98)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.208, 0.89, 0.89, 0.5)
+border_color = Color(0.933, 0.867, 0.518, 0.5)
 corner_radius_top_left = 18
 corner_radius_top_right = 18
 corner_radius_bottom_right = 18
@@ -26,7 +27,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.02, 0.02, 0.03, 0.55)
+color = Color(0.041, 0.035, 0.084, 0.55)
 
 [node name="Center" type="CenterContainer" parent="."]
 layout_mode = 1
@@ -53,7 +54,8 @@ theme_override_constants/separation = 26
 
 [node name="Title" type="Label" parent="Center/Panel/Margin/Column"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.208, 0.89, 0.89, 1)
+theme_override_colors/font_color = Color(0.933, 0.867, 0.518, 1)
+theme_override_fonts/font = ExtResource("2_bold_font")
 theme_override_font_sizes/font_size = 28
 text = "SYSTEM"
 horizontal_alignment = 1
@@ -73,7 +75,7 @@ theme_override_constants/separation = 18
 [node name="VolumeReadout" type="Label" parent="Center/Panel/Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.643, 0.643, 0.729, 1)
+theme_override_colors/font_color = Color(0.655, 0.624, 0.788, 1)
 theme_override_font_sizes/font_size = 20
 text = "VOLUME —%"
 horizontal_alignment = 1

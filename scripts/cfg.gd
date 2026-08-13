@@ -41,7 +41,7 @@ const XBOX_BUTTONS: Array[String] = [
 
 ## Ways shanwan-remap can expose each cabinet joystick to games.
 const JOYSTICK_MODES: Array[String] = [
-	"left_stick", "right_stick", "dpad", "dpad-legacy",
+	"left_stick", "right_stick", "dpad",
 ]
 
 ## Mapping restored whenever the launcher is on screen. It has to agree with the

@@ -1,12 +1,13 @@
-[gd_scene load_steps=8 format=3 uid="uid://bmain0arcade01"]
+[gd_scene load_steps=9 format=3 uid="uid://bmain0arcade01"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
-[ext_resource type="Script" path="res://scripts/session_controller.gd" id="2_session"]
-[ext_resource type="PackedScene" path="res://scenes/system_overlay.tscn" id="3_overlay"]
-[ext_resource type="PackedScene" path="res://scenes/attract.tscn" id="4_attract"]
+[ext_resource type="FontVariation" path="res://theme/fonts/handjet_bold.tres" id="2_bold_font"]
+[ext_resource type="Script" path="res://scripts/session_controller.gd" id="3_session"]
+[ext_resource type="PackedScene" path="res://scenes/system_overlay.tscn" id="4_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/attract.tscn" id="5_attract"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_detail"]
-bg_color = Color(0.086, 0.09, 0.137, 1)
+bg_color = Color(0.118, 0.102, 0.239, 1)
 corner_radius_top_left = 14
 corner_radius_top_right = 14
 corner_radius_bottom_right = 14
@@ -22,12 +23,12 @@ corner_radius_bottom_right = 10
 corner_radius_bottom_left = 10
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_volume"]
-bg_color = Color(0.086, 0.09, 0.137, 0.98)
+bg_color = Color(0.118, 0.102, 0.239, 0.98)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.208, 0.89, 0.89, 0.5)
+border_color = Color(0.58, 0.514, 0.82, 0.5)
 corner_radius_top_left = 14
 corner_radius_top_right = 14
 corner_radius_bottom_right = 14
@@ -50,7 +51,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.043, 0.043, 0.071, 1)
+color = Color(0.082, 0.071, 0.169, 1)
 
 [node name="Layout" type="MarginContainer" parent="."]
 unique_name_in_owner = true
@@ -74,15 +75,16 @@ layout_mode = 2
 
 [node name="Title" type="Label" parent="Layout/Column/Header"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.208, 0.89, 0.89, 1)
+theme_override_colors/font_color = Color(0.933, 0.867, 0.518, 1)
 theme_override_constants/line_spacing = 0
+theme_override_fonts/font = ExtResource("2_bold_font")
 theme_override_font_sizes/font_size = 46
-text = "ARCADE"
+text = "JLM Arcade"
 
 [node name="BuildNumber" type="Label" parent="Layout/Column/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.435, 0.435, 0.522, 1)
+theme_override_colors/font_color = Color(0.431, 0.404, 0.565, 1)
 theme_override_font_sizes/font_size = 16
 text = "BUILD —"
 vertical_alignment = 1
@@ -94,7 +96,7 @@ size_flags_horizontal = 3
 [node name="GameCount" type="Label" parent="Layout/Column/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.541, 0.541, 0.639, 1)
+theme_override_colors/font_color = Color(0.655, 0.624, 0.788, 1)
 theme_override_font_sizes/font_size = 22
 text = "0 games"
 vertical_alignment = 1
@@ -127,7 +129,7 @@ size_flags_vertical = 3
 [node name="EmptyText" type="Label" parent="Layout/Column/EmptyState"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.541, 0.541, 0.639, 1)
+theme_override_colors/font_color = Color(0.655, 0.624, 0.788, 1)
 theme_override_font_sizes/font_size = 30
 text = "No games found"
 horizontal_alignment = 1
@@ -170,7 +172,8 @@ theme_override_constants/separation = 8
 [node name="DetailName" type="Label" parent="Layout/Column/Detail/DetailMargin/DetailColumn"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.949, 0.949, 0.969, 1)
+theme_override_colors/font_color = Color(0.969, 0.953, 0.902, 1)
+theme_override_fonts/font = ExtResource("2_bold_font")
 theme_override_font_sizes/font_size = 32
 text = "—"
 
@@ -178,7 +181,7 @@ text = "—"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.643, 0.643, 0.729, 1)
+theme_override_colors/font_color = Color(0.655, 0.624, 0.788, 1)
 theme_override_font_sizes/font_size = 22
 autowrap_mode = 3
 max_lines_visible = 2
@@ -187,7 +190,7 @@ text_overrun_behavior = 3
 [node name="Hints" type="Label" parent="Layout/Column"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.435, 0.435, 0.522, 1)
+theme_override_colors/font_color = Color(0.431, 0.404, 0.565, 1)
 theme_override_font_sizes/font_size = 20
 text = "Joystick — Browse      Bottom-right — Play      Top-left / Top-right — Volume      Top-middle — Mute      White — System menu"
 horizontal_alignment = 1
@@ -204,7 +207,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.024, 0.024, 0.04, 0.965)
+color = Color(0.055, 0.047, 0.114, 0.965)
 
 [node name="OverlayCenter" type="CenterContainer" parent="Overlay"]
 layout_mode = 1
@@ -221,7 +224,8 @@ theme_override_constants/separation = 18
 [node name="OverlayTitle" type="Label" parent="Overlay/OverlayCenter/OverlayColumn"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.949, 0.949, 0.969, 1)
+theme_override_colors/font_color = Color(0.969, 0.953, 0.902, 1)
+theme_override_fonts/font = ExtResource("2_bold_font")
 theme_override_font_sizes/font_size = 44
 text = "Starting"
 horizontal_alignment = 1
@@ -230,7 +234,7 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 custom_minimum_size = Vector2(1100, 0)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.643, 0.643, 0.729, 1)
+theme_override_colors/font_color = Color(0.655, 0.624, 0.788, 1)
 theme_override_font_sizes/font_size = 24
 text = "Applying controller mapping"
 horizontal_alignment = 1
@@ -271,7 +275,8 @@ theme_override_constants/separation = 20
 unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 0)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.208, 0.89, 0.89, 1)
+theme_override_colors/font_color = Color(0.58, 0.514, 0.82, 1)
+theme_override_fonts/font = ExtResource("2_bold_font")
 theme_override_font_sizes/font_size = 24
 text = "VOLUME"
 vertical_alignment = 1
@@ -288,7 +293,7 @@ show_percentage = false
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 0)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.949, 0.949, 0.969, 1)
+theme_override_colors/font_color = Color(0.969, 0.953, 0.902, 1)
 theme_override_font_sizes/font_size = 24
 text = "50%"
 horizontal_alignment = 2
@@ -296,10 +301,10 @@ vertical_alignment = 1
 
 [node name="SessionController" type="Node" parent="."]
 unique_name_in_owner = true
-script = ExtResource("2_session")
+script = ExtResource("3_session")
 
-[node name="SystemOverlay" parent="SessionController" instance=ExtResource("3_overlay")]
+[node name="SystemOverlay" parent="SessionController" instance=ExtResource("4_overlay")]
 unique_name_in_owner = true
 
-[node name="AttractScreen" parent="SessionController" instance=ExtResource("4_attract")]
+[node name="AttractScreen" parent="SessionController" instance=ExtResource("5_attract")]
 unique_name_in_owner = true

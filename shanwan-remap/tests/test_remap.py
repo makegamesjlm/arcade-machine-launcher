@@ -4,7 +4,6 @@ from shanwan_remap.remap import (
     compose_button_map,
     build_feed_message,
     neutralize_outputs,
-    DPAD_BUTTONS,
 )
 
 CABINET = {"white": 315, "bottom_right": 304, "bottom_middle": 305}
@@ -78,10 +77,20 @@ def test_build_feed_message_ignores_unrelated_events():
     assert build_feed_message(1, event, {}, {}) is None
 
 
-def test_neutralize_outputs_releases_mapped_buttons_and_dpad():
+def test_neutralize_outputs_releases_every_mapped_button():
     ui = FakeUInput()
     button_map = compose_button_map(CABINET, KEYMAP)
     neutralize_outputs(ui, button_map)
     released_keys = {code for etype, code, value in ui.writes if etype == ecodes.EV_KEY and value == 0}
     assert ecodes.BTN_SOUTH in released_keys  # "A", from bottom_right
-    assert DPAD_BUTTONS <= released_keys
+    assert ecodes.BTN_EAST in released_keys  # "B", from bottom_middle
+
+
+def test_neutralize_outputs_centers_both_sticks_and_the_hat():
+    ui = FakeUInput()
+    neutralize_outputs(ui, {})
+    writes = {(etype, code): value for etype, code, value in ui.writes}
+    for axis in (ecodes.ABS_X, ecodes.ABS_Y, ecodes.ABS_RX, ecodes.ABS_RY):
+        assert writes[(ecodes.EV_ABS, axis)] == 127
+    for axis in (ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y):
+        assert writes[(ecodes.EV_ABS, axis)] == 0
