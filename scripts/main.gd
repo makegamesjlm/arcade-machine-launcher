@@ -35,12 +35,19 @@ var _scan_problems := PackedStringArray()
 ## does not reprint the same warnings forever.
 var _logged_problems := PackedStringArray()
 var _launcher: GameLauncher
+var _session: SessionController
 var _input_locked := false
 var _overlay_tween: Tween
 var _volume: VolumeControl
 var _volume_tween: Tween
 var _simulated_outcome := GameLauncher.SimulatedOutcome.SUCCESS
+## Id of the held game, or "" if none - see set_held_game(). Kept separately
+## from GameLauncher.held_game so a rebuild (_rebuild_cards()) can re-apply
+## the badge to freshly instantiated cards without asking SessionController.
+var _held_game_id := ""
 
+@onready var _background: ColorRect = %Background
+@onready var _layout: MarginContainer = %Layout
 @onready var _grid: GridContainer = %Grid
 @onready var _shelf: ScrollContainer = %Shelf
 @onready var _game_count: Label = %GameCount
@@ -59,12 +66,30 @@ var _simulated_outcome := GameLauncher.SimulatedOutcome.SUCCESS
 @onready var _volume_label: Label = %VolumeLabel
 @onready var _volume_progress: ProgressBar = %VolumeProgress
 @onready var _volume_value: Label = %VolumeValue
+@onready var _session_node: SessionController = %SessionController
 
 
 func _ready() -> void:
+	# Which display backend Godot actually picked decides whether the launcher
+	# can raise its own window over a frozen game at all - see README's
+	# "window activation". On Wayland a client cannot raise or un-minimize
+	# itself by protocol, so the answer here is the first thing to check when
+	# the system overlay does not appear.
+	print("[launcher] display server=%s session=%s desktop=%s" % [
+		DisplayServer.get_name(),
+		OS.get_environment("XDG_SESSION_TYPE"),
+		OS.get_environment("XDG_CURRENT_DESKTOP"),
+	])
+
 	if Cfg.fullscreen:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+	# Lets the system overlay's dim layer show a frozen game's own window
+	# through the launcher's - see set_background_visible(). Requires
+	# display/window/size/transparent in project.godot; harmless here
+	# otherwise, since the opaque Background ColorRect still covers the
+	# window whenever this is not actively being used for that.
+	get_window().transparent_bg = true
 
 	_grid.columns = COLUMNS
 	_build_number.text = "BUILD %s" % _read_build_number()
@@ -78,6 +103,9 @@ func _ready() -> void:
 	_launcher.failed.connect(_on_failed)
 
 	_volume = VolumeControl.new()
+
+	_session = _session_node
+	_session.bind(_launcher, self, _volume)
 
 	if Cfg.simulate_launch:
 		_hints.text = ("Arrows: Browse     Enter: Play     Shift+Enter: Fail     "
@@ -103,10 +131,13 @@ func refresh() -> void:
 
 	_scan_problems = PackedStringArray()
 	# The launcher's own mapping is reapplied on every refresh, so a cabinet
-	# whose keymap drifted (a crashed game, a hand-edited file) heals itself.
-	var keymap_error := _launcher.apply_launcher_keymap()
-	if not keymap_error.is_empty():
-		_scan_problems.append("controller mapping: " + keymap_error)
+	# whose keymap drifted (a crashed game, a hand-edited file) heals itself -
+	# except while a game is held: its keymap has to stay installed, not the
+	# launcher's own, or resuming it would hand back the wrong buttons.
+	if not _launcher.is_held:
+		var keymap_error := _launcher.apply_launcher_keymap()
+		if not keymap_error.is_empty():
+			_scan_problems.append("controller mapping: " + keymap_error)
 	_scan_problems.append_array(result.errors)
 	_scan_problems.append_array(result.warnings())
 
@@ -130,6 +161,7 @@ func _rebuild_cards() -> void:
 		var card: GameCard = CARD_SCENE.instantiate()
 		_grid.add_child(card)
 		card.setup(game)
+		card.set_held(game.id == _held_game_id)
 		_cards.append(card)
 
 	if _cards.is_empty():
@@ -140,6 +172,42 @@ func _rebuild_cards() -> void:
 			restored = i
 			break
 	_select(restored)
+
+
+# --- SessionController's public surface on this scene --------------------------
+
+## Marks `game`'s card as held (resumes rather than restarts) and unmarks
+## every other card - only one game is ever held. Pass null to clear it.
+## Updates existing cards directly rather than triggering a full refresh(),
+## since nothing about the game list itself has changed.
+func set_held_game(game: GameEntry) -> void:
+	_held_game_id = game.id if game != null else ""
+	for card in _cards:
+		card.set_held(card.game.id == _held_game_id)
+
+
+## Adds to (true) or removes from (false) the grid's own input lock. This is
+## additive with main.gd's own lock/unlock around the plain launch/return
+## cycle (_on_preparing/_on_finished/_on_failed below) - an unlock request
+## while SessionController still wants the lock held (its own overlay or
+## attract mode is on screen) is vetoed, so the two can never fight over
+## which one gets to turn the grid back on.
+func set_ui_locked(value: bool) -> void:
+	if not value and _session.wants_ui_locked():
+		return
+	_input_locked = value
+
+
+## Hides this scene's own opaque background (and everything drawn on top of
+## it) so a frozen game's own OS-level window - a separate process, sitting
+## behind this one - shows through the transparent parts of the launcher's
+## window instead. Only meaningful while the system overlay is open over a
+## game that was actually running; everywhere else the launcher's normal
+## background stays visible behind whatever is on top of it, exactly like
+## the existing launch-progress overlay (_overlay) always has.
+func set_background_visible(value: bool) -> void:
+	_background.visible = value
+	_layout.visible = value
 
 
 func _update_chrome() -> void:
@@ -192,8 +260,11 @@ func _select(index: int) -> void:
 
 	var game := card.game
 	_detail_name.text = game.name
-	_detail_description.text = (game.description if not game.description.is_empty()
+	var description := (game.description if not game.description.is_empty()
 		else "No description in game.json.")
+	if game.id == _held_game_id:
+		description = "Held - selecting it resumes where it was left.\n\n" + description
+	_detail_description.text = description
 
 
 ## Grid movement. Left/right walk the flat list and wrap at the ends; up/down
@@ -247,10 +318,12 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Once launch begins, the controller belongs exclusively to the game. The
-	# launcher stays alive in the background and can still receive joypad events,
-	# so explicitly ignore its volume bindings until the session has finished.
-	if not _launcher.is_busy and _handle_volume(event):
+	# _input_locked already means "the grid is not the active surface" -
+	# PLAYING, the system overlay, or attract mode - which is exactly when
+	# these raw volume shortcuts must not also fire independently of
+	# whichever UI (the game itself, or the overlay's own volume row) is
+	# supposed to own them right now.
+	if not _input_locked and _handle_volume(event):
 		return
 	if _input_locked:
 		if event.is_action_pressed("nav_back") and _launcher.finish_simulated_session():
@@ -313,11 +386,16 @@ func _simulation_outcome_for(event: InputEvent) -> int:
 
 
 func _activate(simulated_outcome: int = GameLauncher.SimulatedOutcome.SUCCESS) -> void:
-	if _selected < 0 or _launcher.is_busy:
+	# A game that is actually running (busy and not held) never gets here -
+	# the grid is not the active surface while that is true - but a held one
+	# is exactly what this grid is for while HELD_MENU is showing, so it is
+	# not part of this guard. request_play() decides whether that means
+	# resuming it, or closing it to make room for a different selection.
+	if _selected < 0 or (_launcher.is_busy and not _launcher.is_held):
 		return
 	_cards[_selected].play_press()
 	_simulated_outcome = simulated_outcome
-	_launcher.launch(_cards[_selected].game, simulated_outcome)
+	_session.request_play(_cards[_selected].game, simulated_outcome)
 
 
 # --- launcher lifecycle -------------------------------------------------------
@@ -343,7 +421,10 @@ func _on_started(_game: GameEntry) -> void:
 func _on_finished(_game: GameEntry, _exit_code: int) -> void:
 	_show_overlay(false)
 	await get_tree().create_timer(RETURN_LOCKOUT_SECONDS).timeout
-	_input_locked = false
+	# Vetoed (stays locked) if SessionController's own overlay or attract
+	# mode has since taken over the screen - e.g. the idle-kill closing a
+	# game while attract is already looping right through it.
+	set_ui_locked(false)
 	# A game may have been installed or removed while we were away.
 	refresh()
 
@@ -364,7 +445,7 @@ func _on_failed(game: GameEntry, reason: String) -> void:
 			break
 
 	_show_overlay(false)
-	_input_locked = false
+	set_ui_locked(false)
 	refresh()
 
 

@@ -47,6 +47,14 @@ func _ready() -> void:
 	_check(JSON.parse_string(FileAccess.get_file_as_string(Cfg.keymap_path)) == Cfg.LAUNCHER_KEYMAP,
 		"finishing restores the launcher keymap")
 
+	# Held-game state is meaningless under the simulator - there is no real
+	# process to freeze, and simulated sessions finish through
+	# finish_simulated_session() rather than the poll loop hold()/close()
+	# assume - but it must still report sane defaults rather than whatever a
+	# previous real session left behind.
+	_check(not launcher.is_held and launcher.held_game == null,
+		"a finished simulated session is never held")
+
 	print("%d simulated-launch checks failed" % _failures)
 	get_tree().quit(1 if _failures > 0 else 0)
 

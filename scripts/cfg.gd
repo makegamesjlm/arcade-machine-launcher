@@ -16,6 +16,13 @@ extends Node
 const DEFAULT_GAMES_DIR := "~/Nextcloud/Games"
 const DEFAULT_KEYMAP_PATH := "/etc/shanwan-remap/keymap.json"
 
+## The attract-mode loop lives outside the export, next to the games, so it
+## updates the same way a new game does: drop a new file in Nextcloud, no
+## rebuild or redeploy. Must be Ogg Theora; Godot 4's VideoStreamPlayer
+## decodes nothing else. A missing or unreadable file falls back to a
+## built-in static screen (see scenes/attract.tscn) rather than showing black.
+const DEFAULT_ATTRACT_VIDEO := "~/Nextcloud/Arcade/attract.ogv"
+
 ## Physical buttons on the cabinet, in the order they are laid out:
 ##   [top_left]    [top_middle]    [top_right]
 ##   [bottom_left] [bottom_middle] [bottom_right]
@@ -41,6 +48,11 @@ const JOYSTICK_MODES: Array[String] = [
 ## joypad buttons bound in the project input map: nav_select is joypad button 0
 ## (A) and nav_back is button 1 (B), so the bottom-right button confirms and the
 ## bottom-middle button goes back.
+##
+## `white` is deliberately absent. It is the system button now: shanwan-remap
+## never forwards it to a game in any mode (see shanwan-remap/README.md,
+## "Control channel"), and the launcher itself reads it only via the control
+## channel feed, not through this keymap or the project input map.
 const LAUNCHER_KEYMAP := {
 	"bottom_right": "A",
 	"bottom_middle": "B",
@@ -48,19 +60,72 @@ const LAUNCHER_KEYMAP := {
 	"top_middle": "Y",
 	"top_left": "LB",
 	"bottom_left": "RB",
-	"white": "Start",
+}
+
+## Xbox button name -> the Godot joypad button index it shows up as, on the
+## virtual pad shanwan-remap creates. Used by InputRouter to translate a
+## cabinet position (by way of LAUNCHER_KEYMAP) into a synthetic Godot
+## joypad event while navigation is being routed around a blocked/frozen
+## game, and must stay in sync with [input] in project.godot.
+const XBOX_TO_JOY_BUTTON := {
+	"A": JOY_BUTTON_A,
+	"B": JOY_BUTTON_B,
+	"X": JOY_BUTTON_X,
+	"Y": JOY_BUTTON_Y,
+	"LB": JOY_BUTTON_LEFT_SHOULDER,
+	"RB": JOY_BUTTON_RIGHT_SHOULDER,
+	"LT": JOY_BUTTON_LEFT_STICK,
+	"RT": JOY_BUTTON_RIGHT_STICK,
+	"Back": JOY_BUTTON_BACK,
+	"Start": JOY_BUTTON_START,
+	"Guide": JOY_BUTTON_GUIDE,
+	"LS": JOY_BUTTON_LEFT_STICK,
+	"RS": JOY_BUTTON_RIGHT_STICK,
 }
 
 ## How long the shanwan-remap service is documented to take to pick up a new
 ## keymap. The launcher waits this out before starting the game so the first
-## frame of gameplay already has the right mapping.
+## frame of gameplay already has the right mapping. Not paid while a held
+## game resumes - its keymap never left, so InputRouter's mapping (which
+## goes through LAUNCHER_KEYMAP, not whatever is on disk) is all that
+## matters until it does.
 const KEYMAP_RELOAD_SECONDS := 2.2
 
 ## How often to check whether the running game has exited.
 const PROCESS_POLL_SECONDS := 0.5
 
+## shanwan-remap's control channel (see shanwan-remap/README.md). Loopback
+## only - launcher and remapper always run on the same box.
+const CONTROL_HOST := "127.0.0.1"
+const CONTROL_PORT := 47811
+## Must match shanwan_remap.control.PROTOCOL_VERSION. A remapper reporting a
+## different version is refused overlay/attract features and surfaced as a
+## problem, rather than silently misbehaving.
+const CONTROL_PROTOCOL_VERSION := 1
+const CONTROL_RECONNECT_SECONDS := 2.0
+
+## Idle thresholds. Menu (including a held-menu or an open overlay - nobody
+## is actually playing in either) is short; mid-game is long, so a player
+## thinking about a puzzle is not yanked out after two minutes. Idle-kill is
+## independent of attract mode entirely: it fires at its own mark whether or
+## not the video is already looping, and does nothing else when it does.
+const ATTRACT_MENU_SECONDS := 120.0
+const ATTRACT_GAME_SECONDS := 300.0
+const IDLE_KILL_SECONDS := 1800.0
+
+## How long "Send pause" waits after resuming the game before injecting the
+## white press, so the game is actually scheduled and reading its controller
+## again rather than still waking up from SIGSTOP.
+const SEND_PAUSE_DELAY_SECONDS := 0.25
+
+## Swallows the button that woke the attract screen so it can't also select
+## whatever the grid happens to be focused on, mirroring RETURN_LOCKOUT_SECONDS
+## in game_launcher.gd.
+const WAKE_LOCKOUT_SECONDS := 0.4
+
 var games_dir: String = DEFAULT_GAMES_DIR
 var keymap_path: String = DEFAULT_KEYMAP_PATH
+var attract_video: String = DEFAULT_ATTRACT_VIDEO
 
 ## Set by --no-fullscreen, for debugging on a desktop.
 var fullscreen: bool = true
@@ -74,8 +139,8 @@ var simulate_launch: bool = false
 func _ready() -> void:
 	_apply_environment()
 	_apply_command_line()
-	print("[cfg] games_dir=%s keymap_path=%s simulate_launch=%s"
-		% [games_dir, keymap_path, simulate_launch])
+	print("[cfg] games_dir=%s keymap_path=%s attract_video=%s simulate_launch=%s"
+		% [games_dir, keymap_path, attract_video, simulate_launch])
 
 
 func _apply_environment() -> void:
@@ -85,6 +150,9 @@ func _apply_environment() -> void:
 	var env_keymap := OS.get_environment("ARCADE_KEYMAP_PATH")
 	if not env_keymap.is_empty():
 		keymap_path = env_keymap
+	var env_attract := OS.get_environment("ARCADE_ATTRACT_VIDEO")
+	if not env_attract.is_empty():
+		attract_video = env_attract
 
 
 func _apply_command_line() -> void:
@@ -95,16 +163,22 @@ func _apply_command_line() -> void:
 			games_dir = arg.trim_prefix("--games-dir=")
 		elif arg.begins_with("--keymap-path="):
 			keymap_path = arg.trim_prefix("--keymap-path=")
+		elif arg.begins_with("--attract-video="):
+			attract_video = arg.trim_prefix("--attract-video=")
 		elif arg == "--no-fullscreen":
 			fullscreen = false
 		elif arg == "--simulate-launch":
 			simulate_launch = true
-	games_dir = _normalize_dir(games_dir)
+	games_dir = _normalize_path(games_dir)
+	attract_video = _normalize_path(attract_video)
 
 
-## Turns a possibly-relative directory into an absolute one without a trailing
-## slash, so path joins below stay predictable.
-func _normalize_dir(path: String) -> String:
+## Turns a possibly-relative directory or file path into an absolute one
+## without a trailing slash, so path joins (and file-existence checks) below
+## stay predictable. Used for games_dir, keymap_path is left alone (it is
+## meant to point straight at /etc/shanwan-remap on the cabinet), and
+## attract_video.
+func _normalize_path(path: String) -> String:
 	var result := path
 	# Expand a leading ~ to the running user's home. Godot leaves it literal, and
 	# it must happen before the is_relative_path check below, which would

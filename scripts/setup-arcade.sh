@@ -67,7 +67,10 @@ EOF
 systemd-tmpfiles --create /etc/tmpfiles.d/arcade-launcher.conf
 
 # Seed a mapping so the cabinet is usable before the launcher first runs. This
-# must match Cfg.LAUNCHER_KEYMAP in scripts/cfg.gd.
+# must match Cfg.LAUNCHER_KEYMAP in scripts/cfg.gd. `white` is deliberately
+# absent - it is the system button now, read only via shanwan-remap's control
+# channel, and never forwarded to a game by the remapper regardless of what
+# any keymap says (see shanwan-remap/README.md, "Control channel").
 if [[ ! -e "$KEYMAP_FILE" ]]; then
 	cat > "$KEYMAP_FILE" <<'EOF'
 {
@@ -76,8 +79,7 @@ if [[ ! -e "$KEYMAP_FILE" ]]; then
   "top_right": "X",
   "bottom_left": "RB",
   "bottom_middle": "B",
-  "bottom_right": "A",
-  "white": "Start"
+  "bottom_right": "A"
 }
 EOF
 	chown root:"$GROUP" "$KEYMAP_FILE"
@@ -91,10 +93,153 @@ else
 	echo "Kept the existing $KEYMAP_FILE"
 fi
 
+# --- cursor hiding ------------------------------------------------------------
+#
+# The cabinet has no mouse during arcade play, but a mouse may well get
+# plugged back in for maintenance (a file manager, a terminal, ...), so this
+# must hide the cursor for the launcher and games ONLY - not for the whole
+# desktop session. A session-wide cursor theme (KWin's own default, or GTK's)
+# would blind every other application too; earlier versions of this script
+# did exactly that and it was wrong. Instead, only the launcher's own
+# process - and every game, which inherits its environment through the shell
+# wrapper - gets XCURSOR_THEME=arcade-blank set (see systemd/arcade-launcher.service;
+# every game inherits it automatically, since OS.create_process does not
+# clear the environment before exec). A file manager launched from the
+# normal desktop session never sees that variable and keeps the system's
+# normal cursor.
+#
+# Installed per-user rather than system-wide: /usr is read-only on Bazzite's
+# ostree root, but ~/.local/share/icons is exactly where Xcursor already looks
+# first, and it is the arcade user's own home, so no permission dance is
+# needed beyond running as that user - same reasoning as the games dir above.
+CURSOR_THEME=arcade-blank
+CURSOR_THEME_DIR="$ARCADE_HOME/.local/share/icons/$CURSOR_THEME"
+CURSOR_FILE="$CURSOR_THEME_DIR/cursors/blank"
+
+# Every name a Wayland/X11 client might ask for. Games and toolkits are not
+# consistent about which one they use, so all of them point at the same
+# single transparent image.
+CURSOR_NAMES=(
+	default left_ptr arrow x-cursor pointer hand2 hand1 crosshair
+	text xterm ibeam wait watch progress
+	move fleur size_all size_hor size_ver size_bdiag size_fdiag
+	sb_h_double_arrow sb_v_double_arrow
+	col-resize row-resize
+	e-resize w-resize n-resize s-resize
+	ne-resize nw-resize se-resize sw-resize
+	not-allowed no-drop copy alias grab grabbing
+	all-scroll zoom-in zoom-out help question_arrow
+)
+
+echo
+echo "Installing a transparent cursor theme for user '$ARCADE_USER'..."
+
+sudo -u "$ARCADE_USER" mkdir -p "$CURSOR_THEME_DIR/cursors"
+
+# A single 1x1 fully-transparent (alpha=0) Xcursor image, written directly in
+# the on-disk Xcursor binary format (little-endian uint32 fields: a file
+# header, one table-of-contents entry, one image chunk, one ARGB32 pixel).
+# Generated here rather than committed as a binary asset, so nothing depends
+# on xcursorgen being installed and there is no risk of a binary file getting
+# mangled by this repo's `* text=auto` .gitattributes rule on the way to disk.
+sudo -u "$ARCADE_USER" python3 - "$CURSOR_FILE" <<'PYEOF'
+import struct
+import sys
+
+path = sys.argv[1]
+CURSOR_IMAGE_TYPE = 0xfffd0002
+toc_position = 16 + 12  # file header, then this file's one TOC entry
+
+data = b"Xcur"
+data += struct.pack("<III", 16, 0x00010000, 1)  # header size, version, ntoc
+data += struct.pack("<III", CURSOR_IMAGE_TYPE, 1, toc_position)  # toc: type, nominal size, position
+data += struct.pack("<IIII", 36, CURSOR_IMAGE_TYPE, 1, 1)  # chunk header size, type, subtype, version
+data += struct.pack("<IIIII", 1, 1, 0, 0, 0)  # width, height, xhot, yhot, delay
+data += struct.pack("<I", 0x00000000)  # one fully transparent ARGB32 pixel
+
+with open(path, "wb") as f:
+	f.write(data)
+PYEOF
+
+for name in "${CURSOR_NAMES[@]}"; do
+	sudo -u "$ARCADE_USER" ln -sf blank "$CURSOR_THEME_DIR/cursors/$name"
+done
+
+sudo -u "$ARCADE_USER" tee "$CURSOR_THEME_DIR/index.theme" > /dev/null <<EOF
+[Icon Theme]
+Name=Arcade Blank
+Comment=Fully transparent cursor for the MakeGamesJLM arcade cabinet
+Inherits=
+EOF
+
+# Undo a session-wide cursor theme set by an earlier version of this script.
+# Deliberately narrow: only removes settings that hold exactly our theme
+# name, so it cannot clobber a value that was customized for some other
+# reason before or after this script last ran.
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+	current_theme="$(sudo -u "$ARCADE_USER" kreadconfig6 --file kcminputrc --group Mouse --key cursorTheme 2>/dev/null || true)"
+	if [[ "$current_theme" == "$CURSOR_THEME" ]]; then
+		sudo -u "$ARCADE_USER" kwriteconfig6 --file kcminputrc --group Mouse --key cursorTheme --delete
+		echo "Removed the session-wide cursor theme this script set previously - restart the session (log out/in) to see the cursor again on the desktop."
+	fi
+fi
+for gtk_dir in gtk-3.0 gtk-4.0; do
+	settings_file="$ARCADE_HOME/.config/$gtk_dir/settings.ini"
+	if [[ -f "$settings_file" ]]; then
+		sudo -u "$ARCADE_USER" sed -i "/^gtk-cursor-theme-name=$CURSOR_THEME\$/d" "$settings_file"
+	fi
+done
+
+# --- window activation --------------------------------------------------------
+#
+# The system overlay has to come up over a running game, so the launcher calls
+# window_move_to_foreground() after freezing it. KWin refuses that by default:
+# focus-stealing prevention does not let an application activate itself, and
+# instead downgrades the request to a "demands attention" hint - the window
+# stays exactly where it was and its task manager entry just glows orange.
+# That was the "white button freezes the game but the overlay never appears"
+# bug, and no amount of application-side code can override it, because the
+# decision is the compositor's and not the client's.
+#
+# Turned off wholesale rather than through a per-window rule. This is a
+# single-purpose kiosk: the launcher IS the shell, there is no other
+# application whose focus needs protecting from it, and a global setting has
+# no window-matching to get wrong (the launcher's Wayland app_id is not
+# something this script should have to predict). Level 0 is "None" - see
+# System Settings > Window Management > Window Behavior > Focus. KDE's own
+# default is 1 ("Low"), which is what to restore if this ever needs undoing.
+FSP_LEVEL=0
+
+echo
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+	echo "Allowing the launcher to raise its own window (KWin focus stealing prevention)..."
+	sudo -u "$ARCADE_USER" kwriteconfig6 --file kwinrc \
+		--group Windows --key FocusStealingPreventionLevel "$FSP_LEVEL"
+
+	# Best-effort live reload. Usually fails from here, because reaching the
+	# user's session bus needs DBUS_SESSION_BUS_ADDRESS and this script runs
+	# as root; the log out / reboot below covers that case, so a failure is
+	# not worth stopping for.
+	if sudo -u "$ARCADE_USER" dbus-send --session --type=method_call \
+		--dest=org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1; then
+		echo "  applied to the running session."
+	else
+		echo "  will apply when $ARCADE_USER next logs in."
+	fi
+else
+	echo "warning: kwriteconfig6 not found - skipping the KWin focus setting." >&2
+	echo "         Without it the system overlay will not appear over a running" >&2
+	echo "         game; the launcher's window will only glow in the task manager." >&2
+	echo "         Set it by hand in System Settings > Window Management >" >&2
+	echo "         Window Behavior > Focus > Focus stealing prevention: None." >&2
+fi
+
 echo
 echo "Done."
-echo "  keymap dir : $KEYMAP_DIR (group $GROUP, group-writable)"
-echo "  games dir  : $GAMES_DIR"
+echo "  keymap dir   : $KEYMAP_DIR (group $GROUP, group-writable)"
+echo "  games dir    : $GAMES_DIR"
+echo "  cursor theme : $CURSOR_THEME_DIR"
+echo "  kwin focus   : stealing prevention = $FSP_LEVEL (none)"
 echo
 echo "Group membership only applies to new logins - log $ARCADE_USER out and"
 echo "back in (or reboot) before starting the launcher."

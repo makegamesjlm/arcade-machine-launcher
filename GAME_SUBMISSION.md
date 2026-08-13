@@ -52,8 +52,16 @@ To remap the arcade buttons, include a `keymap.json` file with the following str
   "white": "Start"
 }
 ```
-The mapping above is the default, so the file can be omitted if these controls work for
-your game. Add the file only if you need a different button layout.
+The six non-`white` mappings above are the launcher's default, so the file can
+be omitted if these controls work for your game. Add the file only if you need
+a different button layout.
+
+`white` is not part of any default, and is worth a special mention: it is the
+cabinet's system button, and the launcher never forwards it to a game on its
+own, whatever this file says. Map it to `Start` anyway (as above) if your game
+has a native pause/settings menu you would want that button to reach - the
+launcher's own system overlay has a **Send pause** option that resumes the
+game and then sends white through, and it uses whatever this file maps it to.
 
 Cabinet buttons: `top_left`, `top_middle`, `top_right`, `bottom_left`,
 `bottom_middle`, `bottom_right`, `white`.
@@ -71,6 +79,12 @@ one of these values:
 - `"dpad"` — digital d-pad, compatible with standard gamepad APIs including SDL and Unity's `Gamepad.dpad`
 
 Omit `joystick` to retain the default `"left_stick"` behavior.
+
+## No mouse
+
+The cabinet has no mouse. The launcher hides the system cursor, but if your
+game draws its own cursor sprite or otherwise assumes one is present, disable
+that - there is nothing to point it at and no way to move it.
 
 ## Before sending
 

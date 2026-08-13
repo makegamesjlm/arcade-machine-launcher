@@ -80,6 +80,11 @@ names an unknown button is **rejected whole** — the game still appears and is
 still playable, but the launcher will not install a mapping it knows the service
 would choke on, and says so in the amber strip at the bottom of the screen.
 
+`white` is reserved: shanwan-remap never forwards it to a game in any mode,
+whatever a keymap says (see "The white button and the system overlay" below).
+Mapping it to `Start` here is still worth doing — it is what a game's own pause
+menu opens on when the player picks **Send pause** from the system overlay.
+
 ## Cabinet setup
 
 On a fresh cabinet, one script runs every step below in order — permissions, the
@@ -99,8 +104,11 @@ sudo ./scripts/setup-arcade.sh
 ```
 
 This creates `/etc/shanwan-remap` and `~/Nextcloud/Games`, makes the keymap
-directory writable by a new `arcade` group, adds your user to it, and seeds a
-starting keymap. Log out and back in afterwards so the group membership takes
+directory writable by a new `arcade` group, adds your user to it, seeds a
+starting keymap, installs the transparent cursor theme, and turns off KWin's
+focus stealing prevention so the launcher can raise its own window over a
+running game (see "Window activation" below — the system overlay does not work
+without it). Log out and back in afterwards so the group membership takes
 effect.
 
 The launcher then writes `/etc/shanwan-remap/keymap.json` directly, with no
@@ -114,14 +122,15 @@ Then build and install the service: [systemd/README-service.md](systemd/README-s
 | Input | Action |
 | --- | --- |
 | Joystick / d-pad | Move around the grid |
-| Bottom-right button | Play the selected game |
-| Bottom-middle button | Dismiss an error |
+| Bottom-right button | Play the selected game, or confirm in the system overlay |
+| Bottom-middle button | Dismiss an error, or Continue in the system overlay |
 | Top-left / Top-right button | System volume down / up |
 | Top-middle button | Mute toggle |
-| White button | Rescan the games folder |
+| White button | Open the system overlay |
 
-Either controller can drive the menu. Volume and mute work only on the menu
-screen; once a game is running it owns the controller.
+Either controller can drive the menu. Volume, mute, and the plain shortcuts
+above all work only while the grid is the active surface — not while a game
+is running, the system overlay is open, or attract mode is showing.
 
 ## What happens on select
 
@@ -129,13 +138,150 @@ screen; once a game is running it owns the controller.
    `/etc/shanwan-remap/keymap.json`.
 2. The launcher waits 2.2s for the remap service to hot-reload, so the game's
    first frame already has the right buttons.
-3. The launcher minimizes, drops to 5 FPS, and starts the executable.
+3. The launcher drops to 5 FPS and starts the executable, staying on screen
+   until the game's own window comes up over it (it does not minimize here —
+   see below).
 4. It polls twice a second until the process is gone.
 5. The launcher's own keymap is restored, the window comes back to the
    foreground, and the games folder is rescanned.
 
 A game that exits non-zero within 2 seconds is reported as a failed launch
-rather than a finished session.
+rather than a finished session. (Steps 4-5 do not run for a game that is
+merely held rather than actually finished — see below.)
+
+## The white button and the system overlay
+
+White is a system button, not a game button: shanwan-remap never writes it to
+the virtual pad, so a game never sees it on its own, no matter what any
+keymap says. Pressing it always opens a two-row overlay over whatever was on
+screen (the game keeps running, but freezes for the duration — see below):
+
+Row 1 (varies by context):
+
+| Context | Items |
+| --- | --- |
+| A game is running | Continue · Send pause · Back to launcher · Close game · Sleep |
+| Menu, nothing held | Continue · Refresh · Sleep |
+| Menu, a game held | Continue · Close game · Refresh · Sleep |
+
+Row 2 is always **Mute · Volume down · Volume up**, and acts immediately
+without closing the overlay.
+
+- **Continue** resumes the game (or closes the overlay on the menu) exactly
+  where it was.
+- **Send pause** resumes the game and then sends the white press through to
+  it, so the game's own keymap-mapped pause/settings menu opens.
+- **Back to launcher** leaves the game held, frozen, in the background and
+  shows the grid; selecting that game again resumes it.
+- **Close game** shuts it down completely.
+- **Sleep** enters attract mode immediately.
+- The bottom-middle button and a second white press both mean Continue.
+
+Navigation is by joystick; the bottom-right button confirms, exactly like the
+main grid.
+
+## Held games
+
+Only one game is ever held. Selecting a different game while one is held
+closes the held one first — a public cabinet must not become un-startable by
+someone who does not understand the badge. The grid marks a held game with a
+badge and its detail text says it will resume rather than restart.
+
+## Attract mode
+
+A looping, silent idle video plays after 120 seconds on the menu, or 300
+seconds while a game is being played (so a player thinking about a puzzle
+is not yanked out after two minutes) - either way pulled from
+`~/Nextcloud/Arcade/attract.ogv` (override with `--attract-video` /
+`ARCADE_ATTRACT_VIDEO`), Ogg Theora only, since that is all Godot 4 decodes.
+A missing or unreadable file falls back to a built-in static screen. Content
+is specified in `screensaver-brief.md`.
+
+Pressing any button always wakes it back to the launcher - the menu, or the
+held-menu if a game is parked - never back into a game. If a game was
+running when attract started, it stays alive, held, in the background.
+
+## Idle kill
+
+After 30 minutes with no input at all, whatever game is running or held is
+killed, so the cabinet does not run unattended overnight. Nothing else
+happens at that mark: no display blanking, and the attract video (if already
+looping) keeps looping right through it.
+
+## Cursor hiding
+
+There is no mouse during arcade play, but one may still get plugged in for
+maintenance, so this is scoped to the launcher and games only, not the whole
+desktop session. `setup-arcade.sh` installs a fully transparent Xcursor
+theme (`arcade-blank`) for the arcade user; only `XCURSOR_THEME=arcade-blank`
+in the launcher's own environment (and every game's, inherited through it)
+points at it. A file manager or terminal opened from the normal desktop
+session never sees that variable and keeps the system's normal cursor. See
+`setup-arcade.sh`'s "cursor hiding" section for why this was chosen over
+routing games through a nested compositor such as Gamescope (tried once,
+reverted; see git history).
+
+## Window activation
+
+Showing the system overlay over a running game means the launcher has to raise
+its own window. **That is a compositor policy decision, not something the
+launcher can do on its own**, and getting it wrong is invisible from inside the
+application — which is what made the "white button freezes the game but the
+overlay never appears" bug so hard to place.
+
+KWin's *focus stealing prevention* does not let an application activate itself.
+It does not fail the request either: it downgrades it to a "demands attention"
+hint, so the window stays exactly where it was and its task manager entry glows
+orange. Everything else in the path works — the gate blocks, the game takes its
+`SIGSTOP`, the overlay opens — on a window that is never brought forward.
+
+`setup-arcade.sh` turns it off for the arcade user:
+
+```
+kwriteconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel 0
+```
+
+Off wholesale rather than via a per-window rule: this is a single-purpose
+kiosk, the launcher *is* the shell, and there is no other application whose
+focus needs protecting from it. KDE's default is `1` ("Low"), which is what to
+restore if it ever needs undoing.
+
+**The tell:** the launcher's task manager entry glows orange when white is
+pressed, and manually alt-tabbing to the launcher once makes the overlay work
+for the rest of the session — a user-initiated activation is the one kind
+focus stealing prevention always allows.
+
+### Launching minimizes nothing; resuming minimizes
+
+Getting out of a game's way is two different problems depending on whether the
+game's window already exists, and the launcher treats them separately.
+
+**Launching** (`GameLauncher.go_to_background()`) does not minimize. The game
+maps a brand new fullscreen window, which the compositor stacks on top and
+activates on its own — guaranteed, since focus stealing prevention is set to
+"none", where new windows always activate. Minimizing here would unmap the
+launcher *before* the game has drawn anything, leaving the bare desktop on
+screen for the second or so the game takes to come up. Staying put means the
+player keeps looking at the launcher until the game replaces it.
+
+**Resuming** (`GameLauncher.reveal_resumed_game()`) does minimize, and has to.
+Resuming a held game or picking Continue in the system overlay only sends
+`SIGCONT` — that thaws the process but re-maps and re-activates nothing, and
+the launcher was deliberately raised above the game's window to show the
+overlay in the first place. Without the minimize, Continue leaves the grid
+sitting on top of a running, invisible game. Here minimizing is free: the
+game's window is already mapped directly underneath, so it is what appears the
+instant the launcher goes away — no gap, no desktop flash.
+
+That a client cannot un-minimize itself on Wayland (`xdg-shell` has
+`xdg_toplevel.set_minimized` and no matching unset) does not matter: the
+compositor restores the window as part of honouring the activation request,
+which is exactly what focus stealing prevention being off buys.
+
+`main.gd` logs the display backend at startup (`display server=… session=…`).
+Check it first if window behaviour is ever in question, since none of the X11
+escape hatches — `wmctrl`, `_NET_WM_STATE_ABOVE`, self-raising — exist under
+Wayland.
 
 ## Development
 
@@ -145,8 +291,14 @@ The launcher can run on a desktop against fake games. Paths are overridable:
 godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json
 ```
 
-`--games-dir`, `--keymap-path` and `--no-fullscreen` also read from
-`ARCADE_GAMES_DIR` and `ARCADE_KEYMAP_PATH`.
+`--games-dir`, `--keymap-path`, `--attract-video` and `--no-fullscreen` also
+read from `ARCADE_GAMES_DIR`, `ARCADE_KEYMAP_PATH` and `ARCADE_ATTRACT_VIDEO`.
+
+The system overlay, attract mode, and held games all depend on
+shanwan-remap's control channel (see shanwan-remap/README.md), which has
+nothing to connect to on a dev box. Without it the launcher falls back to
+plain Godot input for the grid and skips those features rather than hanging;
+they can only be exercised on the cabinet.
 
 `dev/games/` holds fixtures, including deliberately broken ones (invalid JSON,
 missing binary, a keymap with bad button names) to exercise the error paths.
@@ -184,8 +336,10 @@ godot --headless --path . res://tests/test_core.tscn
 godot --headless --path . res://tests/test_simulated_launch.tscn
 ```
 
-Covers the scanner, keymap validation, atomic install, and all three simulated
-launch outcomes. Exits non-zero on failure.
+Covers the scanner, keymap validation, atomic install, the Xbox-to-joypad
+button table InputRouter depends on, the system overlay's navigation, and all
+three simulated launch outcomes. Exits non-zero on failure. shanwan-remap has
+its own `pytest` suite - see shanwan-remap/README.md.
 
 ### Screenshots
 
@@ -200,10 +354,18 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/cfg.gd` | Autoloaded paths and constants, including the launcher's own keymap |
 | `scripts/game_scanner.gd` | `/games` → `GameEntry` objects, with errors and warnings |
 | `scripts/keymap_writer.gd` | Keymap validation and the atomic install |
-| `scripts/game_launcher.gd` | The launch → play → return cycle |
-| `scripts/main.gd` | Grid, navigation, overlays |
-| `scenes/` | `main.tscn`, `game_card.tscn` |
-| `scripts/setup-arcade.sh` | One-time cabinet permissions setup |
+| `scripts/game_launcher.gd` | The launch → play → return cycle, plus freeze/hold/close |
+| `scripts/arcade_bus.gd` | Client for shanwan-remap's control channel (autoload `Bus`) |
+| `scripts/input_router.gd` | Feeds control-channel events into Godot's Input while blocked |
+| `scripts/idle_tracker.gd` | Attract/idle-kill thresholds (autoload `Idle`) |
+| `scripts/session_controller.gd` | State machine for the system overlay, attract mode, held games |
+| `scripts/system_overlay.gd`, `scripts/attract_screen.gd` | The two on top of everything else |
+| `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
+| `scripts/main.gd` | Grid, navigation, the launch-progress overlay, volume HUD |
+| `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
+| `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor theme |
+| `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |
+| `scripts/install-git-hooks.sh`, `.ps1` | Enables the build-number pre-commit hook |
 | `systemd/` | User unit and install notes |
 | `theme/fonts/` | Handjet font variations used by the UI |
 | `assets/fonts/` | Bundled Handjet variable font and its license |

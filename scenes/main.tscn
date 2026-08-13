@@ -1,7 +1,10 @@
-[gd_scene load_steps=6 format=3 uid="uid://bmain0arcade01"]
+[gd_scene load_steps=9 format=3 uid="uid://bmain0arcade01"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="FontVariation" path="res://theme/fonts/handjet_bold.tres" id="2_bold_font"]
+[ext_resource type="Script" path="res://scripts/session_controller.gd" id="3_session"]
+[ext_resource type="PackedScene" path="res://scenes/system_overlay.tscn" id="4_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/attract.tscn" id="5_attract"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_detail"]
 bg_color = Color(0.118, 0.102, 0.239, 1)
@@ -41,6 +44,7 @@ grow_vertical = 2
 script = ExtResource("1_main")
 
 [node name="Background" type="ColorRect" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -50,6 +54,7 @@ grow_vertical = 2
 color = Color(0.082, 0.071, 0.169, 1)
 
 [node name="Layout" type="MarginContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -186,7 +191,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.431, 0.404, 0.565, 1)
 theme_override_font_sizes/font_size = 20
-text = "Joystick — Browse      Bottom-right — Play      Top-left / Top-right — Volume      Top-middle — Mute      White — Refresh"
+text = "Joystick — Browse      Bottom-right — Play      Top-left / Top-right — Volume      Top-middle — Mute      White — System menu"
 horizontal_alignment = 1
 
 [node name="Overlay" type="ColorRect" parent="."]
@@ -292,3 +297,13 @@ theme_override_font_sizes/font_size = 24
 text = "50%"
 horizontal_alignment = 2
 vertical_alignment = 1
+
+[node name="SessionController" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("3_session")
+
+[node name="SystemOverlay" parent="SessionController" instance=ExtResource("4_overlay")]
+unique_name_in_owner = true
+
+[node name="AttractScreen" parent="SessionController" instance=ExtResource("5_attract")]
+unique_name_in_owner = true

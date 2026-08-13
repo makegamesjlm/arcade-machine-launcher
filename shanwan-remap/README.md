@@ -8,6 +8,12 @@ Remaps SHANWAN PS3/PC Gamepad for arcade cabinets. Fixes the dpad-as-stick issue
 - Identifies as Xbox 360 controller so all games recognize it
 - Per-game button remapping via simple JSON keymaps
 - Hot-reloads keymaps without service restart (for arcade launcher integration)
+- Reserves the `white` cabinet button as a system button: it is never forwarded to a game
+  on its own, no matter what a keymap says. The launcher owns it via the control channel
+  below.
+- Exposes a live control channel the launcher uses to see every physical press, gate all
+  physical input off a game while it is frozen, and inject a single synthetic press (see
+  "Control channel" below).
 
 ## Requirements
 
@@ -92,6 +98,58 @@ The arcade launcher swaps keymaps by writing to `/etc/shanwan-remap/keymap.json`
 3. Launcher starts the game
 4. Game exits → launcher can write a different keymap for the next game
 ```
+
+## Control channel
+
+A second, live channel for anything a 2-second file poll is too slow for: opening the
+system overlay on `white`, freezing a game's input while the launcher's own UI is on
+screen, and injecting a single button press. TCP, loopback-only, newline-delimited JSON,
+`127.0.0.1:47811`. The remapper is the server; the launcher (or `nc`/any TCP client, for
+debugging) is the client.
+
+**Feed — every message the service sends, unprompted, for every physical event:**
+
+```
+{"t":"btn","pad":1,"pos":"bottom_right","xbox":"A","v":1}
+{"t":"btn","pad":1,"pos":"white","xbox":null,"v":1}
+{"t":"hat","pad":1,"axis":"x","v":-1}
+```
+
+`pos` is the `cabinet.json` position name, independent of whichever keymap is currently
+installed. `white` always reports `"xbox":null` — it is a system position now, not a game
+button, whatever a keymap might say.
+
+**Commands — sent by the client, one JSON object per line:**
+
+| Command | Effect |
+| --- | --- |
+| `{"c":"hello"}` | Handshake. Replies with `{"ok":true,"proto":1,"has_white":true\|false}`. |
+| `{"c":"mode","m":"pass"}` | Normal forwarding — the default. |
+| `{"c":"mode","m":"blocked"}` | Every physical button and axis is neutralized (all buttons released, sticks/hat centered) and then dropped — nothing reaches the virtual pad until `pass` is restored. |
+| `{"c":"inject","pos":"white"}` | Writes one press+release of `pos`, through whatever the *current* keymap maps it to. This is the only way `white` ever reaches a game. |
+
+Every command gets one JSON reply line, `{"ok":true,...}` or `{"ok":false,"error":"..."}`.
+
+**Failure handling built in, not bolted on:**
+
+- If the client that requested `blocked` disconnects (or never reconnects after the
+  service restarts), the gate reverts to `pass` on its own — a crashed launcher can never
+  leave a game permanently deaf to its own controller.
+- The service restarts (and the gate resets to `pass`) whenever a controller is unplugged
+  or replugged, per the udev rule below. A reconnecting client is expected to push its
+  desired mode again rather than assume it stuck.
+
+## Tests
+
+```bash
+pip install -e .[dev]
+pytest
+```
+
+Pure-logic coverage only (the gate, the compose/feed helpers with a fake uinput, and the
+control protocol over a real loopback socket on an OS-assigned port) — nothing here opens
+a physical device, so it needs no cabinet hardware, but it does need Linux (the package
+imports `evdev` at module load).
 
 ## Uninstall
 

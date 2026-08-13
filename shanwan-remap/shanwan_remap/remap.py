@@ -9,16 +9,33 @@ Two config files:
 
 The service composes them: position → source code (cabinet) → dest code (keymap).
 Watches keymap.json for changes and hot-reloads without restart.
+
+A third channel, the control.py TCP server, lets the launcher see every
+physical button/hat position live (see build_feed_message) and toggle an
+OutputGate (see gate.py) between "pass" (normal forwarding) and "blocked"
+(nothing physical reaches the virtual pad — used while a game is frozen
+behind the launcher's system overlay, attract screen, or held-game menu).
+The white/system button is never forwarded to a game on its own in either
+mode; the only way it reaches one is the control channel's "inject" command.
 """
 import json
 import sys
 import signal
 import logging
 import threading
+import time
 from pathlib import Path
 from evdev import InputDevice, UInput, ecodes, AbsInfo
 
+from .gate import OutputGate, PASS, BLOCKED, MODES, is_white_code
+from .control import ControlServer
+
 LOG = logging.getLogger("shanwan-remap")
+
+# How long an injected button (used for "Send pause") stays held before its
+# release is written. Long enough for a game's input poll to see the press
+# as a real button rather than a single-frame glitch.
+INJECT_HOLD_SECONDS = 0.05
 
 HAT_TO_AXIS = {-1: 0, 0: 127, 1: 255}
 
@@ -69,6 +86,33 @@ XBOX_NAME_TO_TRIGGER_AXIS = {
     "RT": ecodes.ABS_RZ,
 }
 TRIGGER_MAX = 255
+
+# The reverse of XBOX_NAME_TO_CODE, used to report what a physical button
+# currently means to a game (see build_feed_message) without the launcher
+# needing its own copy of the evdev code table.
+CODE_TO_XBOX_NAME = {code: name for name, code in XBOX_NAME_TO_CODE.items()}
+
+# Every UInput handle currently open, keyed by pad index (1, 2, ...). The
+# control channel's "inject" command and the gate's neutralize-before-block
+# step both need to reach every virtual pad, not just the one whose physical
+# thread happens to be running them.
+_uinputs_lock = threading.Lock()
+_uinputs = {}
+
+
+def register_uinput(pad_index, ui):
+    with _uinputs_lock:
+        _uinputs[pad_index] = ui
+
+
+def unregister_uinput(pad_index):
+    with _uinputs_lock:
+        _uinputs.pop(pad_index, None)
+
+
+def all_uinputs():
+    with _uinputs_lock:
+        return list(_uinputs.values())
 
 
 def load_cabinet():
@@ -200,13 +244,50 @@ def build_capabilities(dev):
     return caps
 
 
-def reset_joystick_outputs(ui):
-    """Return every possible joystick output to its neutral state."""
+def neutralize_outputs(ui, button_map):
+    """Release every joystick and button output on one virtual pad.
+
+    Used on a joystick-mode change (so switching from dpad to left-stick
+    does not leave a phantom hat direction held), and on every physical
+    device before the gate flips to BLOCKED (so nothing a player was holding
+    down when the system overlay opened stays "stuck" on the pad while the
+    game behind it is frozen and cannot process the release itself).
+    """
     for axis in (ecodes.ABS_X, ecodes.ABS_Y, ecodes.ABS_RX, ecodes.ABS_RY):
         ui.write(ecodes.EV_ABS, axis, 127)
     for axis in (ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y):
         ui.write(ecodes.EV_ABS, axis, 0)
+    for axis in (ecodes.ABS_Z, ecodes.ABS_RZ):
+        ui.write(ecodes.EV_ABS, axis, 0)
+    for dest_code in set(button_map.values()):
+        ui.write(ecodes.EV_KEY, dest_code, 0)
     ui.syn()
+
+
+def build_feed_message(pad_index, event, code_to_position, button_map):
+    """Translate one physical event into a control-channel feed message.
+
+    Returns None for anything the launcher does not need to see (original
+    ABS_X/ABS_Y, EV_SYN, an unmapped button position, ...).
+
+    White is reported with xbox=None unconditionally, even if some keymap
+    still assigns it an Xbox name — it is a system-only position now, and
+    xbox=None is the launcher's signal that this press is never going to
+    reach a game on its own.
+    """
+    if event.type == ecodes.EV_KEY:
+        position = code_to_position.get(event.code)
+        if position is None:
+            return None
+        if position == "white":
+            return {"t": "btn", "pad": pad_index, "pos": "white", "xbox": None, "v": event.value}
+        dest_code = button_map.get(event.code)
+        xbox_name = None if dest_code is None else CODE_TO_XBOX_NAME.get(dest_code)
+        return {"t": "btn", "pad": pad_index, "pos": position, "xbox": xbox_name, "v": event.value}
+    if event.type == ecodes.EV_ABS and event.code in (ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y):
+        axis = "x" if event.code == ecodes.ABS_HAT0X else "y"
+        return {"t": "hat", "pad": pad_index, "axis": axis, "v": event.value}
+    return None
 
 
 class KeymapWatcher:
@@ -276,8 +357,14 @@ class KeymapWatcher:
         self._stop.set()
 
 
-def remap_single(event_path, name, watcher):
-    """Remap a single controller. Blocks until interrupted or device disconnected."""
+def remap_single(event_path, name, watcher, pad_index, cabinet, output_gate, control_server):
+    """Remap a single controller. Blocks until interrupted or device disconnected.
+
+    `output_gate` and `control_server` are shared across every controller
+    thread (see remap_all()): the gate is one global pass/blocked switch, and
+    the control server needs to hear from every physical pad to build a
+    complete feed for the launcher.
+    """
     dev = InputDevice(event_path)
     LOG.info("Opened %s (%s)", dev.name, event_path)
 
@@ -294,6 +381,10 @@ def remap_single(event_path, name, watcher):
         version=XBOX360_VERSION,
     )
     LOG.info("Created virtual device: %s", name)
+    register_uinput(pad_index, ui)
+
+    # position -> evdev code, inverted once per thread rather than per event.
+    code_to_position = {code: c for c, code in cabinet.items()}
     previous_joy_mode = watcher.get_joystick_mode()
 
     try:
@@ -303,10 +394,35 @@ def remap_single(event_path, name, watcher):
             joy_mode = watcher.get_joystick_mode()
 
             if joy_mode != previous_joy_mode:
-                reset_joystick_outputs(ui)
+                neutralize_outputs(ui, current_map)
                 previous_joy_mode = joy_mode
 
-            if event.type == ecodes.EV_ABS:
+            # The feed always goes out, regardless of the gate: the launcher
+            # needs it to drive the system overlay and menu navigation while
+            # a game is frozen and blocked, which is exactly when the gate
+            # is BLOCKED.
+            feed_message = build_feed_message(pad_index, event, code_to_position, current_map)
+            if feed_message is not None:
+                control_server.broadcast(feed_message)
+
+            blocked = output_gate.get_mode() != PASS
+
+            if event.type == ecodes.EV_KEY:
+                if is_white_code(event.code, cabinet) or blocked:
+                    # White never reaches a game on its own (only "inject"
+                    # writes it), and nothing else does while blocked.
+                    continue
+                trigger_axis = current_trigger_map.get(event.code)
+                if trigger_axis is not None:
+                    ui.write(ecodes.EV_ABS, trigger_axis, TRIGGER_MAX if event.value else 0)
+                    ui.syn()
+                else:
+                    out_code = current_map.get(event.code, event.code)
+                    ui.write(ecodes.EV_KEY, out_code, event.value)
+                    ui.syn()
+            elif event.type == ecodes.EV_ABS:
+                if blocked:
+                    continue
                 if event.code in (ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y):
                     if joy_mode == KeymapWatcher.LEFT_STICK:
                         axis = ecodes.ABS_X if event.code == ecodes.ABS_HAT0X else ecodes.ABS_Y
@@ -324,27 +440,87 @@ def remap_single(event_path, name, watcher):
                 else:
                     ui.write(event.type, event.code, event.value)
                     ui.syn()
-            elif event.type == ecodes.EV_KEY:
-                trigger_axis = current_trigger_map.get(event.code)
-                if trigger_axis is not None:
-                    ui.write(ecodes.EV_ABS, trigger_axis, TRIGGER_MAX if event.value else 0)
-                    ui.syn()
-                else:
-                    out_code = current_map.get(event.code, event.code)
-                    ui.write(ecodes.EV_KEY, out_code, event.value)
-                    ui.syn()
             elif event.type != ecodes.EV_SYN:
+                if blocked:
+                    continue
                 ui.write(event.type, event.code, event.value)
                 ui.syn()
     except (OSError, IOError) as e:
         LOG.warning("Device disconnected or error: %s", e)
     finally:
+        unregister_uinput(pad_index)
         try:
             dev.ungrab()
         except (OSError, IOError):
             pass
         ui.close()
         LOG.info("Stopped remapping %s", name)
+
+
+def _neutralize_all(watcher):
+    """Release every joystick and button output on every open virtual pad."""
+    button_map = watcher.get_button_map()
+    for ui in all_uinputs():
+        neutralize_outputs(ui, button_map)
+
+
+def _inject(pos, cabinet, watcher):
+    """Write one synthetic press+release of `pos` through the current keymap.
+
+    Returns "" on success, or a human-readable error string. Writes to every
+    open virtual pad — "Send pause" does not know or care which physical
+    controller a player is holding, and a game reads them as one device
+    each, so writing to both is harmless.
+    """
+    source_code = cabinet.get(pos)
+    if source_code is None:
+        return "position '%s' not found in cabinet.json" % (pos,)
+    current_map = watcher.get_button_map()
+    dest_code = current_map.get(source_code, source_code)
+    uis = all_uinputs()
+    if not uis:
+        return "no controller connected"
+    for ui in uis:
+        ui.write(ecodes.EV_KEY, dest_code, 1)
+        ui.syn()
+    time.sleep(INJECT_HOLD_SECONDS)
+    for ui in uis:
+        ui.write(ecodes.EV_KEY, dest_code, 0)
+        ui.syn()
+    return ""
+
+
+def start_control_server(cabinet, watcher, output_gate):
+    """Wire an OutputGate + KeymapWatcher into a ControlServer and start it.
+
+    Shared by remap_all() and the single-device debug path in main() so both
+    speak the same protocol.
+    """
+    has_white = "white" in cabinet
+
+    def set_mode(mode):
+        if mode not in MODES:
+            raise ValueError("unknown mode: %r" % (mode,))
+        if mode == BLOCKED:
+            # Release everything before gating it off, so nothing a player
+            # was holding down when the overlay opened stays stuck on the
+            # virtual pad for the whole time the game behind it is frozen.
+            _neutralize_all(watcher)
+        output_gate.set_mode(mode)
+        LOG.info("Gate mode -> %s", mode)
+
+    def inject(pos):
+        return _inject(pos, cabinet, watcher)
+
+    def revert_to_pass():
+        # Dead-man switch: if the launcher is gone, a blocked/frozen game
+        # must not stay deaf to its own controller indefinitely.
+        LOG.warning("Control channel idle; reverting gate to pass")
+        output_gate.set_mode(PASS)
+
+    control_server = ControlServer(has_white, set_mode, inject, revert_to_pass)
+    control_server.start()
+    return control_server
 
 
 def remap_all():
@@ -358,12 +534,16 @@ def remap_all():
     watcher = KeymapWatcher(cabinet)
     watcher.start()
 
+    output_gate = OutputGate()
+    control_server = start_control_server(cabinet, watcher, output_gate)
+
     LOG.info("Found %d SHANWAN device(s): %s", len(devices), ", ".join(devices))
 
     threads = []
     for i, path in enumerate(devices, 1):
         name = f"Remapped Controller {i}"
-        t = threading.Thread(target=remap_single, args=(path, name, watcher), daemon=True)
+        args = (path, name, watcher, i, cabinet, output_gate, control_server)
+        t = threading.Thread(target=remap_single, args=args, daemon=True)
         t.start()
         threads.append(t)
         LOG.info("Started remapping thread for %s -> %s", path, name)
@@ -372,6 +552,7 @@ def remap_all():
         t.join()
 
     watcher.stop()
+    control_server.stop()
 
 
 def main():
@@ -391,7 +572,9 @@ def main():
         cabinet = load_cabinet()
         watcher = KeymapWatcher(cabinet)
         watcher.start()
-        remap_single(sys.argv[1], sys.argv[2], watcher)
+        output_gate = OutputGate()
+        control_server = start_control_server(cabinet, watcher, output_gate)
+        remap_single(sys.argv[1], sys.argv[2], watcher, 1, cabinet, output_gate, control_server)
     elif len(sys.argv) == 1:
         remap_all()
     else:

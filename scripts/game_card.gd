@@ -21,6 +21,7 @@ var _tween: Tween
 @onready var _placeholder: Label = %Placeholder
 @onready var _title: Label = %Title
 @onready var _players: Label = %Players
+@onready var _held_badge: PanelContainer = %HeldBadge
 
 
 func _ready() -> void:
@@ -50,6 +51,13 @@ func _show_placeholder(entry: GameEntry) -> void:
 	background.bg_color = Color.from_hsv(wrapf(float(entry.id.hash()) / 4096.0, 0.0, 1.0), 0.45, 0.34)
 	background.set_corner_radius_all(10)
 	_placeholder.add_theme_stylebox_override("normal", background)
+
+
+## Shows or hides the "HELD" badge - the grid's cue that selecting this game
+## resumes it where it was left rather than restarting it. main.gd is the
+## only caller, and only ever has one card held at a time.
+func set_held(value: bool) -> void:
+	_held_badge.visible = value
 
 
 func set_selected(value: bool) -> void:
