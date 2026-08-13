@@ -190,11 +190,56 @@ for gtk_dir in gtk-3.0 gtk-4.0; do
 	fi
 done
 
+# --- window activation --------------------------------------------------------
+#
+# The system overlay has to come up over a running game, so the launcher calls
+# window_move_to_foreground() after freezing it. KWin refuses that by default:
+# focus-stealing prevention does not let an application activate itself, and
+# instead downgrades the request to a "demands attention" hint - the window
+# stays exactly where it was and its task manager entry just glows orange.
+# That was the "white button freezes the game but the overlay never appears"
+# bug, and no amount of application-side code can override it, because the
+# decision is the compositor's and not the client's.
+#
+# Turned off wholesale rather than through a per-window rule. This is a
+# single-purpose kiosk: the launcher IS the shell, there is no other
+# application whose focus needs protecting from it, and a global setting has
+# no window-matching to get wrong (the launcher's Wayland app_id is not
+# something this script should have to predict). Level 0 is "None" - see
+# System Settings > Window Management > Window Behavior > Focus. KDE's own
+# default is 1 ("Low"), which is what to restore if this ever needs undoing.
+FSP_LEVEL=0
+
+echo
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+	echo "Allowing the launcher to raise its own window (KWin focus stealing prevention)..."
+	sudo -u "$ARCADE_USER" kwriteconfig6 --file kwinrc \
+		--group Windows --key FocusStealingPreventionLevel "$FSP_LEVEL"
+
+	# Best-effort live reload. Usually fails from here, because reaching the
+	# user's session bus needs DBUS_SESSION_BUS_ADDRESS and this script runs
+	# as root; the log out / reboot below covers that case, so a failure is
+	# not worth stopping for.
+	if sudo -u "$ARCADE_USER" dbus-send --session --type=method_call \
+		--dest=org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1; then
+		echo "  applied to the running session."
+	else
+		echo "  will apply when $ARCADE_USER next logs in."
+	fi
+else
+	echo "warning: kwriteconfig6 not found - skipping the KWin focus setting." >&2
+	echo "         Without it the system overlay will not appear over a running" >&2
+	echo "         game; the launcher's window will only glow in the task manager." >&2
+	echo "         Set it by hand in System Settings > Window Management >" >&2
+	echo "         Window Behavior > Focus > Focus stealing prevention: None." >&2
+fi
+
 echo
 echo "Done."
 echo "  keymap dir   : $KEYMAP_DIR (group $GROUP, group-writable)"
 echo "  games dir    : $GAMES_DIR"
 echo "  cursor theme : $CURSOR_THEME_DIR"
+echo "  kwin focus   : stealing prevention = $FSP_LEVEL (none)"
 echo
 echo "Group membership only applies to new logins - log $ARCADE_USER out and"
 echo "back in (or reboot) before starting the launcher."

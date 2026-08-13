@@ -104,8 +104,11 @@ sudo ./scripts/setup-arcade.sh
 ```
 
 This creates `/etc/shanwan-remap` and `~/Nextcloud/Games`, makes the keymap
-directory writable by a new `arcade` group, adds your user to it, and seeds a
-starting keymap. Log out and back in afterwards so the group membership takes
+directory writable by a new `arcade` group, adds your user to it, seeds a
+starting keymap, installs the transparent cursor theme, and turns off KWin's
+focus stealing prevention so the launcher can raise its own window over a
+running game (see "Window activation" below — the system overlay does not work
+without it). Log out and back in afterwards so the group membership takes
 effect.
 
 The launcher then writes `/etc/shanwan-remap/keymap.json` directly, with no
@@ -217,31 +220,50 @@ session never sees that variable and keeps the system's normal cursor. See
 routing games through a nested compositor such as Gamescope (tried once,
 reverted; see git history).
 
-## The launcher never minimizes
+## Window activation
 
-While a game plays, the launcher drops to 5 FPS and lets the game's fullscreen
-window cover it. It does **not** minimize, and must not start doing so again.
+Showing the system overlay over a running game means the launcher has to raise
+its own window. **That is a compositor policy decision, not something the
+launcher can do on its own**, and getting it wrong is invisible from inside the
+application — which is what made the "white button freezes the game but the
+overlay never appears" bug so hard to place.
 
-The cabinet runs Wayland (KDE Plasma 6 on Bazzite), where minimizing is a
-one-way door. `xdg-shell` gives a client `xdg_toplevel.set_minimized` and no
-matching unset — the protocol states plainly that there is no way to unset
-minimization on a surface, or even to ask whether a surface is minimized. Only
-the compositor can restore a minimized window. A launcher that minimizes
-itself when a game starts can therefore never bring itself back.
+KWin's *focus stealing prevention* does not let an application activate itself.
+It does not fail the request either: it downgrades it to a "demands attention"
+hint, so the window stays exactly where it was and its task manager entry glows
+orange. Everything else in the path works — the gate blocks, the game takes its
+`SIGSTOP`, the overlay opens — on a window that is never brought forward.
 
-That was the cause of the "white button freezes the game but the system
-overlay never appears" bug. Everything else in that path worked — the gate
-blocked, the game took its `SIGSTOP`, the overlay opened — but it opened on a
-window the client had no way of ever showing again, which is why the symptom
-read as a drawing or stacking problem rather than a window-state one.
+`setup-arcade.sh` turns it off for the arcade user:
 
-The tell, if it ever comes back: manually alt-tabbing to the launcher once
-makes the overlay work for the rest of the session. That is the compositor
-performing the un-minimize the client is not allowed to perform, and
-alt-tabbing back into the game restacks without re-minimizing.
+```
+kwriteconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel 0
+```
 
-`main.gd` logs the display backend at startup (`display server=… session=…`);
-check it first if window behaviour is ever in question, since none of the X11
+Off wholesale rather than via a per-window rule: this is a single-purpose
+kiosk, the launcher *is* the shell, and there is no other application whose
+focus needs protecting from it. KDE's default is `1` ("Low"), which is what to
+restore if it ever needs undoing.
+
+**The tell:** the launcher's task manager entry glows orange when white is
+pressed, and manually alt-tabbing to the launcher once makes the overlay work
+for the rest of the session — a user-initiated activation is the one kind
+focus stealing prevention always allows.
+
+### The launcher also never minimizes
+
+Separately, `go_to_background()` lets the game's fullscreen window cover the
+launcher rather than minimizing it. On Wayland `xdg-shell` offers
+`xdg_toplevel.set_minimized` and no matching unset — the protocol says outright
+that there is no way to unset minimization on a surface, or even to ask whether
+one is minimized. Only the compositor can restore a minimized window.
+
+This is not what caused the bug above (with focus stealing prevention off, KWin
+restores the window as part of honouring the activation), but it removes a
+needless dependency on that behaviour and is worth keeping.
+
+`main.gd` logs the display backend at startup (`display server=… session=…`).
+Check it first if window behaviour is ever in question, since none of the X11
 escape hatches — `wmctrl`, `_NET_WM_STATE_ABOVE`, self-raising — exist under
 Wayland.
 
