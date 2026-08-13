@@ -23,8 +23,14 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 
-# Install build deps on regular Fedora
-if command -v dnf &>/dev/null; then
+# Install build deps on regular Fedora. Bazzite and other Fedora Atomic hosts
+# expose a dnf compatibility/helper command even though packages are managed by
+# rpm-ostree. Invoking that helper can open a documentation page and block this
+# installer until the browser closes. The cabinet image already includes the
+# Python tooling needed below, so do not invoke dnf on an immutable host.
+if command -v rpm-ostree &>/dev/null; then
+    echo "[0/5] Immutable rpm-ostree host detected; skipping dnf dependencies."
+elif command -v dnf &>/dev/null; then
     echo "[0/5] Ensuring build dependencies..."
     dnf install -y python3-pip python3-devel gcc 2>/dev/null || true
 fi
