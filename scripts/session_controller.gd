@@ -7,7 +7,7 @@ extends Node
 ##
 ## States:
 ##   MENU      - the grid, nothing held, nothing playing
-##   PLAYING   - a game owns the screen (main.gd covered by it)
+##   PLAYING   - a game owns the screen (main.gd minimized)
 ##   OVERLAY   - the system overlay is open, over a frozen game or the menu
 ##   HELD_MENU - the grid is showing, with a game held frozen in the background
 ##   ATTRACT   - the idle video, with or without a game held behind it
