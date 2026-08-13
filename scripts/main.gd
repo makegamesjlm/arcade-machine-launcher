@@ -20,11 +20,8 @@ const RETURN_LOCKOUT_SECONDS := 0.6
 
 const OVERLAY_FADE_SECONDS := 0.22
 
-## The words a running game's own tile can carry, in the order a launch walks
-## through them. Each one also picks the longer line shown under the grid -
-## see _status_note().
-const STATUS_MAPPING := "MAPPING"
-const STATUS_STARTING := "STARTING"
+## The one word the grid ever puts on a tile. Everything earlier in a launch -
+## remapping, starting - takes the whole screen instead (see _on_preparing).
 const STATUS_RUNNING := "RUNNING"
 
 ## How long the volume bar lingers at full opacity after the last change before
@@ -48,12 +45,10 @@ var _overlay_tween: Tween
 var _volume: VolumeControl
 var _volume_tween: Tween
 var _simulated_outcome := GameLauncher.SimulatedOutcome.SUCCESS
-## Id of the game whose card is wearing a status word, and the word itself, or
-## "" for neither. Kept separately from GameLauncher's own state so a rebuild
-## (_rebuild_cards()) can put the status back on a freshly instantiated card
-## without asking SessionController.
-var _status_game_id := ""
-var _status_text := ""
+## Id of the game whose card is marked RUNNING, or "" if none. Kept separately
+## from GameLauncher's own state so a rebuild (_rebuild_cards()) can put the
+## mark back on a freshly instantiated card without asking SessionController.
+var _running_game_id := ""
 
 @onready var _background: ColorRect = %Background
 @onready var _layout: MarginContainer = %Layout
@@ -171,7 +166,7 @@ func _rebuild_cards() -> void:
 		var card: GameCard = CARD_SCENE.instantiate()
 		_grid.add_child(card)
 		card.setup(game)
-		card.set_status(_status_text if game.id == _status_game_id else "")
+		card.set_status(STATUS_RUNNING if game.id == _running_game_id else "")
 		_cards.append(card)
 
 	if _cards.is_empty():
@@ -209,35 +204,28 @@ func set_background_visible(value: bool) -> void:
 	_layout.visible = value
 
 
-## Marks `game`'s card with a status word ("STARTING", "RUNNING"), or clears
-## the grid's status entirely when `game` is null. The word stays up for as
-## long as the game is open - including while it is held, frozen in the
-## background - so the grid always says which game the cabinet still has
-## going; only the game actually ending clears it. Public because
-## SessionController sees one of those endings (held_game_vanished) that the
-## launch lifecycle below never hears about.
-func set_running_game(game: GameEntry, status: String = STATUS_RUNNING) -> void:
-	_status_game_id = game.id if game != null else ""
-	_status_text = status if game != null else ""
+## Marks `game`'s card RUNNING, or clears the grid's mark when `game` is null.
+## The mark stays up for as long as the game is open - including while it is
+## held, frozen in the background - so the grid always says which game the
+## cabinet still has going; only the game actually ending clears it. Public
+## because SessionController sees one of those endings (held_game_vanished)
+## that the launch lifecycle below never hears about.
+func set_running_game(game: GameEntry) -> void:
+	_running_game_id = game.id if game != null else ""
 	for card in _cards:
-		card.set_status(_status_text if card.game.id == _status_game_id else "")
+		card.set_status(STATUS_RUNNING if card.game.id == _running_game_id else "")
 	if game == null:
 		# Nothing is open any more, so the detail line goes back to describing
 		# the selection.
 		update_detail()
 	else:
-		_detail_description.text = _status_note(status)
+		_detail_description.text = _running_note()
 
 
-## The wordier half of a tile's status, shown on the detail line under the
+## The wordier half of the RUNNING mark, shown on the detail line under the
 ## grid. It matters most in simulate mode, where the grid is the only thing on
 ## screen and something has to say which key ends the session.
-func _status_note(status: String) -> String:
-	match status:
-		STATUS_MAPPING:
-			return "Applying controller mapping..."
-		STATUS_STARTING:
-			return "Starting..."
+func _running_note() -> String:
 	if not Cfg.simulate_launch:
 		return "Running"
 	if _simulated_outcome == GameLauncher.SimulatedOutcome.EARLY_CRASH:
@@ -447,21 +435,28 @@ func _activate(simulated_outcome: int = GameLauncher.SimulatedOutcome.SUCCESS) -
 
 # --- launcher lifecycle -------------------------------------------------------
 
-## The grid stays up through the whole launch: the game being started says so
-## on its own tile, and the detail line under the grid carries the wordier
-## half. Only a failure (_on_failed) still takes the screen, since that one
-## has an actual message to read.
+## Remapping and starting take the whole screen. They are the stretch where
+## the cabinet is mid-way through something a player must not think they can
+## interrupt - the grid still being there, with one tile merely marked, reads
+## as an invitation to keep pressing buttons. Once the game is actually up
+## (_on_started) the screen goes back to the grid, and the tile carries it
+## from there.
 func _on_preparing(game: GameEntry) -> void:
 	_input_locked = true
 	_repeat_countdown.clear()
-	set_running_game(game, STATUS_MAPPING if not game.keymap.is_empty() else STATUS_STARTING)
+	_overlay_title.text = game.name
+	_overlay_sub.text = ("Applying controller mapping..." if not game.keymap.is_empty()
+		else "Starting...")
+	_show_overlay(true)
 
 
 func _on_started(game: GameEntry) -> void:
+	_show_overlay(false)
 	set_running_game(game)
 
 
 func _on_finished(_game: GameEntry, _exit_code: int) -> void:
+	_show_overlay(false)  # a game that died before it ever started
 	set_running_game(null)
 	await get_tree().create_timer(RETURN_LOCKOUT_SECONDS).timeout
 	# Vetoed (stays locked) if SessionController's own overlay or attract
@@ -493,9 +488,8 @@ func _on_failed(game: GameEntry, reason: String) -> void:
 	refresh()
 
 
-## Fades %Overlay, which since the grid took over reporting a launch is only
-## ever the "could not start" screen - the one message wordy enough, and rare
-## enough, to be worth covering the grid for.
+## Fades %Overlay, the full-screen card: the launch's pre-game phases while
+## they run, and the "could not start" message afterwards if it comes to that.
 func _show_overlay(shown: bool) -> void:
 	if shown:
 		_overlay.visible = true

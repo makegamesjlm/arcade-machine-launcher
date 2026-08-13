@@ -365,7 +365,7 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/session_controller.gd` | State machine for the system overlay, attract mode, held games |
 | `scripts/system_overlay.gd`, `scripts/attract_screen.gd` | The two on top of everything else |
 | `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
-| `scripts/main.gd` | Grid, navigation, launch status on the running game's tile, volume HUD |
+| `scripts/main.gd` | Grid, navigation, the launch takeover and the running tile's mark, volume HUD |
 | `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
 | `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor theme |
 | `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |

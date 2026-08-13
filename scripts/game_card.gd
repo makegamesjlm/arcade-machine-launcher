@@ -54,11 +54,12 @@ func _show_placeholder(entry: GameEntry) -> void:
 	_placeholder.add_theme_stylebox_override("normal", background)
 
 
-## Puts a short status word ("STARTING", "RUNNING") over this card's icon, or
-## clears it when `text` is empty. This is the grid's only mark: it stands for
-## the whole time a game is open - starting, playing, or parked frozen in the
-## background - so the player can see which tile the cabinet still has going
-## without being asked to tell those apart.
+## Puts a short status word ("RUNNING") over this card's icon, or clears it
+## when `text` is empty. This is the grid's only mark, and it stands for the
+## whole time a game is up - playing, or parked frozen in the background - so
+## the player can see which tile the cabinet still has going without being
+## asked to tell those apart. Everything earlier in a launch belongs to
+## main.gd's full-screen card instead.
 func set_status(text: String) -> void:
 	_status_label.text = text
 	_status_veil.visible = not text.is_empty()
