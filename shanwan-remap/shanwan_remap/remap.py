@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-shanwan-remap: Remap SHANWAN PS3/PC Gamepad dpad (HAT0X/HAT0Y) to left stick (ABS_X/ABS_Y)
-and remap buttons based on cabinet.json + keymap.json configuration.
+shanwan-remap: Remap the SHANWAN PS3/PC Gamepad joystick to the left stick,
+right stick, or one of two dpad representations, and remap buttons from
+cabinet.json + keymap.json.
 
 Two config files:
   cabinet.json — maps physical button positions to evdev codes (set once per cabinet)
@@ -21,6 +22,16 @@ from evdev import InputDevice, UInput, ecodes, AbsInfo
 LOG = logging.getLogger("shanwan-remap")
 
 HAT_TO_AXIS = {-1: 0, 0: 127, 1: 255}
+
+DPAD_AXIS_BUTTONS = {
+    ecodes.ABS_HAT0X: (ecodes.BTN_DPAD_LEFT, ecodes.BTN_DPAD_RIGHT),
+    ecodes.ABS_HAT0Y: (ecodes.BTN_DPAD_UP, ecodes.BTN_DPAD_DOWN),
+}
+DPAD_BUTTONS = {
+    button
+    for axis_buttons in DPAD_AXIS_BUTTONS.values()
+    for button in axis_buttons
+}
 
 CONFIG_DIR = Path("/etc/shanwan-remap")
 CABINET_FILE = CONFIG_DIR / "cabinet.json"
@@ -144,8 +155,8 @@ def build_capabilities(dev, button_map):
             new_abs.append((ecodes.ABS_HAT0X, HAT_INFO))     # dpad
             new_abs.append((ecodes.ABS_HAT0Y, HAT_INFO))
             caps[etype] = new_abs
-        elif etype == ecodes.EV_KEY and button_map:
-            mapped_buttons = set()
+        elif etype == ecodes.EV_KEY:
+            mapped_buttons = set(DPAD_BUTTONS)
             for code in ecodes_list:
                 if code in button_map:
                     mapped_buttons.add(button_map[code])
@@ -159,6 +170,24 @@ def build_capabilities(dev, button_map):
     return caps
 
 
+def write_dpad_buttons(ui, axis, value):
+    """Write canonical dpad-button events for one physical hat axis."""
+    negative_button, positive_button = DPAD_AXIS_BUTTONS[axis]
+    ui.write(ecodes.EV_KEY, negative_button, int(value < 0))
+    ui.write(ecodes.EV_KEY, positive_button, int(value > 0))
+
+
+def reset_joystick_outputs(ui):
+    """Return every possible joystick output to its neutral state."""
+    for axis in (ecodes.ABS_X, ecodes.ABS_Y, ecodes.ABS_RX, ecodes.ABS_RY):
+        ui.write(ecodes.EV_ABS, axis, 127)
+    for axis in (ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y):
+        ui.write(ecodes.EV_ABS, axis, 0)
+    for button in DPAD_BUTTONS:
+        ui.write(ecodes.EV_KEY, button, 0)
+    ui.syn()
+
+
 class KeymapWatcher:
     """Watches keymap.json for changes and recomposes the button map + joystick mode."""
 
@@ -166,6 +195,7 @@ class KeymapWatcher:
     LEFT_STICK = "left_stick"
     RIGHT_STICK = "right_stick"
     DPAD = "dpad"
+    DPAD_LEGACY = "dpad-legacy"
 
     def __init__(self, cabinet):
         self.cabinet = cabinet
@@ -232,11 +262,16 @@ def remap_single(event_path, name, watcher):
 
     ui = UInput(caps, name=name, vendor=XBOX360_VENDOR, product=XBOX360_PRODUCT)
     LOG.info("Created virtual device: %s", name)
+    previous_joy_mode = watcher.get_joystick_mode()
 
     try:
         for event in dev.read_loop():
             current_map = watcher.get_button_map()
             joy_mode = watcher.get_joystick_mode()
+
+            if joy_mode != previous_joy_mode:
+                reset_joystick_outputs(ui)
+                previous_joy_mode = joy_mode
 
             if event.type == ecodes.EV_ABS:
                 if event.code in (ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y):
@@ -248,8 +283,11 @@ def remap_single(event_path, name, watcher):
                         axis = ecodes.ABS_RX if event.code == ecodes.ABS_HAT0X else ecodes.ABS_RY
                         ui.write(ecodes.EV_ABS, axis, HAT_TO_AXIS.get(event.value, 127))
                         ui.syn()
-                    else:  # dpad — pass through as hat
+                    elif joy_mode == KeymapWatcher.DPAD:
                         ui.write(ecodes.EV_ABS, event.code, event.value)
+                        ui.syn()
+                    elif joy_mode == KeymapWatcher.DPAD_LEGACY:
+                        write_dpad_buttons(ui, event.code, event.value)
                         ui.syn()
                 elif event.code in (ecodes.ABS_X, ecodes.ABS_Y):
                     continue  # drop original unused axes

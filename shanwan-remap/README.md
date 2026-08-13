@@ -4,7 +4,7 @@ Remaps SHANWAN PS3/PC Gamepad for arcade cabinets. Fixes the dpad-as-stick issue
 
 ## What it does
 
-- Remaps dpad (HAT0X/HAT0Y) to left analog stick (ABS_X/ABS_Y) with proper 0-255 range
+- Remaps the physical joystick to the left stick, right stick, or either of two digital dpad representations
 - Identifies as Xbox 360 controller so all games recognize it
 - Per-game button remapping via simple JSON keymaps
 - Hot-reloads keymaps without service restart (for arcade launcher integration)
@@ -54,7 +54,12 @@ Each game gets a `keymap.json` using position names and Xbox button names:
 
 - `"left_stick"` — joystick acts as left analog stick (default, most games)
 - `"right_stick"` — joystick acts as right analog stick
-- `"dpad"` — joystick acts as digital dpad (fighting games, retro games)
+- `"dpad"` — digital dpad emitted as hat axes (`ABS_HAT0X/Y`)
+- `"dpad-legacy"` — digital dpad emitted as canonical buttons (`BTN_DPAD_*`)
+
+Games and input libraries differ in which dpad representation they recognize.
+Try `"dpad"` first, then `"dpad-legacy"` if the game does not respond. Each mode emits
+only its named representation, avoiding duplicate input in software that handles both.
 
 ### Position names
 
