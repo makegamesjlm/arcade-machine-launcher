@@ -80,8 +80,8 @@ confirm the game's frame freezes and stays visible under the dim overlay,
 that the game never sees the white press or any overlay navigation, and that
 each of Continue / Send pause / Back to launcher / Close game / Sleep does
 what it says (see the main README's "The white button and the system
-overlay"). Confirm a game held via Back to launcher shows a badge on its grid
-tile and resumes instantly when reselected.
+overlay"). Confirm a game held via Back to launcher still reads RUNNING on
+its grid tile and resumes instantly when reselected.
 
 ## Notes
 

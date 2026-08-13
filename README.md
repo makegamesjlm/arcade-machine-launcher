@@ -186,8 +186,10 @@ main grid.
 
 Only one game is ever held. Selecting a different game while one is held
 closes the held one first — a public cabinet must not become un-startable by
-someone who does not understand the badge. The grid marks a held game with a
-badge and its detail text says it will resume rather than restart.
+someone who does not understand the grid's marks. A held game is not marked
+as anything separate: its tile reads **RUNNING**, the same as it did while it
+was on screen, because from the player's side it is still open. Selecting it
+resumes it where it was left.
 
 ## Attract mode
 
@@ -363,7 +365,7 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/session_controller.gd` | State machine for the system overlay, attract mode, held games |
 | `scripts/system_overlay.gd`, `scripts/attract_screen.gd` | The two on top of everything else |
 | `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
-| `scripts/main.gd` | Grid, navigation, the launch-progress overlay, volume HUD |
+| `scripts/main.gd` | Grid, navigation, launch status on the running game's tile, volume HUD |
 | `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
 | `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor theme |
 | `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |

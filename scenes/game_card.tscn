@@ -44,16 +44,12 @@ corner_radius_top_right = 10
 corner_radius_bottom_right = 10
 corner_radius_bottom_left = 10
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_heldbadge"]
-bg_color = Color(0.933, 0.867, 0.518, 1)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
-corner_radius_bottom_right = 8
-corner_radius_bottom_left = 8
-content_margin_left = 10.0
-content_margin_top = 4.0
-content_margin_right = 10.0
-content_margin_bottom = 4.0
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_statusveil"]
+bg_color = Color(0.043, 0.039, 0.086, 0.78)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
 
 [node name="GameCard" type="PanelContainer"]
 custom_minimum_size = Vector2(306, 340)
@@ -99,6 +95,24 @@ theme_override_font_sizes/font_size = 88
 horizontal_alignment = 1
 vertical_alignment = 1
 
+[node name="StatusVeil" type="PanelContainer" parent="Margin/Body/IconFrame"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_statusveil")
+
+[node name="StatusLabel" type="Label" parent="Margin/Body/IconFrame/StatusVeil"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.933, 0.867, 0.518, 1)
+theme_override_fonts/font = ExtResource("2_bold_font")
+theme_override_font_sizes/font_size = 36
+text = "RUNNING"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="Title" type="Label" parent="Margin/Body"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -117,24 +131,4 @@ layout_mode = 2
 theme_override_colors/font_color = Color(0.655, 0.624, 0.788, 1)
 theme_override_font_sizes/font_size = 19
 text = "1 player"
-horizontal_alignment = 1
-
-[node name="HeldBadge" type="PanelContainer" parent="."]
-unique_name_in_owner = true
-visible = false
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -84.0
-offset_top = 10.0
-offset_right = -10.0
-grow_horizontal = 0
-theme_override_styles/panel = SubResource("StyleBoxFlat_heldbadge")
-
-[node name="HeldBadgeLabel" type="Label" parent="HeldBadge"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.043, 0.043, 0.071, 1)
-theme_override_font_sizes/font_size = 15
-text = "HELD"
 horizontal_alignment = 1

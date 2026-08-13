@@ -2,8 +2,11 @@ class_name SessionController
 extends Node
 ## Single place that sequences mode/freeze/window changes for the system
 ## overlay, attract mode, and held games. Everything else - the grid, the
-## launch-progress overlay (`%Overlay` in main.tscn), the volume HUD - stays
-## in main.gd; this owns only the states layered on top of it.
+## volume HUD, the launch lifecycle's own messaging - stays in main.gd; this
+## owns only the states layered on top of it. The grid's RUNNING mark follows
+## the game's whole life, not the screen, so it is main.gd's to clear on
+## finished/failed; the one ending that never reaches those handlers
+## (held_game_vanished) is cleared from here.
 ##
 ## States:
 ##   MENU      - the grid, nothing held, nothing playing
@@ -16,8 +19,8 @@ extends Node
 ## exists and is frozen - OVERLAY, HELD_MENU, and ATTRACT-with-a-game. It is
 ## PASS in MENU, PLAYING, and ATTRACT-with-no-game. Freezing a game and
 ## marking it "held" (GameLauncher.hold()) always happen together here, for
-## exactly the same reason: is_held is what this whole invariant, and the
-## grid's held badge, and the one-held-game-ever rule, all key off.
+## exactly the same reason: is_held is what this whole invariant and the
+## one-held-game-ever rule both key off.
 ##
 ## Idle.playing is centralized in _set_state(). The grid's ui-lock is not:
 ## main.gd still owns locking for its own plain launch/return cycle (with
@@ -71,7 +74,7 @@ func bind(launcher: GameLauncher, main: Control, volume: VolumeControl) -> void:
 ## Called by main.gd instead of GameLauncher.launch() directly, so it can
 ## resume a held game or make room by closing a different one - only one is
 ## ever held, so a public cabinet can never be un-startable by someone who
-## does not understand the badge.
+## does not understand what the grid's RUNNING mark means.
 func request_play(game: GameEntry, simulated_outcome: int = GameLauncher.SimulatedOutcome.SUCCESS) -> void:
 	if _launcher.is_held and _launcher.held_game.id == game.id:
 		_resume_held_game()
@@ -79,7 +82,6 @@ func request_play(game: GameEntry, simulated_outcome: int = GameLauncher.Simulat
 	if _launcher.is_held:
 		await _launcher.close_held()
 		Bus.set_mode(Bus.MODE_PASS)
-		_main.set_held_game(null)
 	_launcher.launch(game, simulated_outcome)
 
 
@@ -98,16 +100,19 @@ func _on_game_ended(_game, _detail = null) -> void:
 
 
 func _on_held_game_vanished(_game: GameEntry) -> void:
-	_main.set_held_game(null)
+	# The only death that never reaches main.gd's finished/failed handlers, so
+	# the tile it left saying RUNNING has to be cleared from here.
+	_main.set_running_game(null)
 	# Re-derive _router.active either way: is_held just went false, and
 	# _set_state() is the only thing that re-reads it (see _gate_is_blocked).
 	_set_state(State.MENU if _state != State.ATTRACT else State.ATTRACT)
 
 
 func _resume_held_game() -> void:
-	_main.set_held_game(null)
+	var game := _launcher.held_game  # cleared by resume_held() below
 	_launcher.resume_held()
 	Bus.set_mode(Bus.MODE_PASS)
+	_main.set_running_game(game)  # already marked; this restores the note too
 	_launcher.reveal_resumed_game()  # its window is already there, behind ours
 	_set_state(State.PLAYING)
 	_lock_ui()  # no launch() call happens here, so nothing else will
@@ -163,8 +168,10 @@ func _continue_overlay() -> void:
 
 
 func _resume_for_playing() -> void:
+	var game := _launcher.held_game  # cleared by resume_held() below
 	_launcher.resume_held()
 	Bus.set_mode(Bus.MODE_PASS)
+	_main.set_running_game(game)  # already marked; this restores the note too
 	_launcher.reveal_resumed_game()  # its window is already there, behind ours
 	_set_state(State.PLAYING)
 
@@ -218,7 +225,10 @@ func _send_pause() -> void:
 ## game's controller fd and replay the instant it resumes.
 func _back_to_launcher() -> void:
 	_close_overlay_ui()
-	_main.set_held_game(_launcher.held_game)
+	# The tile keeps saying RUNNING - the game is still open, just parked in
+	# the background - but the grid is the surface again, so the line under it
+	# goes back to describing whatever is selected.
+	_main.update_detail()
 	_set_state(State.HELD_MENU)
 	_unlock_ui()
 
@@ -233,7 +243,6 @@ func _close_game() -> void:
 	else:
 		await _launcher.close()
 	Bus.set_mode(Bus.MODE_PASS)
-	_main.set_held_game(null)
 	_set_state(State.MENU)
 
 
@@ -266,7 +275,7 @@ func _on_attract_due() -> void:
 func _on_attract_woken() -> void:
 	_attract_ui.stop()
 	_main.set_background_visible(true)
-	_main.set_held_game(_launcher.held_game)
+	_main.update_detail()  # the grid is the surface again - same as above
 	_set_state(State.HELD_MENU if _launcher.is_held else State.MENU)
 	await get_tree().create_timer(Cfg.WAKE_LOCKOUT_SECONDS).timeout
 	_unlock_ui()
@@ -289,7 +298,6 @@ func _on_kill_due() -> void:
 	else:
 		await _launcher.close()
 	Bus.set_mode(Bus.MODE_PASS)
-	_main.set_held_game(null)
 	# Re-derive _router.active either way: is_held just went false, and
 	# _set_state() is the only thing that re-reads it (see _gate_is_blocked).
 	_set_state(State.MENU if _state != State.ATTRACT else State.ATTRACT)

@@ -21,7 +21,8 @@ var _tween: Tween
 @onready var _placeholder: Label = %Placeholder
 @onready var _title: Label = %Title
 @onready var _players: Label = %Players
-@onready var _held_badge: PanelContainer = %HeldBadge
+@onready var _status_veil: PanelContainer = %StatusVeil
+@onready var _status_label: Label = %StatusLabel
 
 
 func _ready() -> void:
@@ -53,11 +54,14 @@ func _show_placeholder(entry: GameEntry) -> void:
 	_placeholder.add_theme_stylebox_override("normal", background)
 
 
-## Shows or hides the "HELD" badge - the grid's cue that selecting this game
-## resumes it where it was left rather than restarting it. main.gd is the
-## only caller, and only ever has one card held at a time.
-func set_held(value: bool) -> void:
-	_held_badge.visible = value
+## Puts a short status word ("STARTING", "RUNNING") over this card's icon, or
+## clears it when `text` is empty. This is the grid's only mark: it stands for
+## the whole time a game is open - starting, playing, or parked frozen in the
+## background - so the player can see which tile the cabinet still has going
+## without being asked to tell those apart.
+func set_status(text: String) -> void:
+	_status_label.text = text
+	_status_veil.visible = not text.is_empty()
 
 
 func set_selected(value: bool) -> void:
