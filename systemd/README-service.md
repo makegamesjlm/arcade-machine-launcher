@@ -70,10 +70,7 @@ test -x ~/Nextcloud/Games/neon-drift/game.x86_64
 Use the cabinet's white button to rescan the games folder; the launcher service
 does not need to be restarted. Launch the game through the arcade launcher for the smoke
 test, then verify that it reaches its menu, accepts both cabinet controllers as
-appropriate, fills the display, keeps the mouse cursor hidden, and exits cleanly
-back to the launcher. Gamescope provides the game-session cursor hiding and is
-included with Bazzite; if it cannot be found, the launcher falls back to launching
-the game directly and records a warning. Check
+appropriate, fills the display, and exits cleanly back to the launcher. Check
 `journalctl --user -u arcade-launcher.service` if it does not appear or start.
 
 ## Notes
