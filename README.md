@@ -205,11 +205,16 @@ looping) keeps looping right through it.
 
 ## Cursor hiding
 
-The cabinet has no mouse, so any visible cursor is a stray one. `setup-arcade.sh`
-installs a fully transparent Xcursor theme (`arcade-blank`) for the arcade user
-and points the session at it - see its "cursor hiding" section for exactly what
-that covers and why it was chosen over routing games through a nested
-compositor such as Gamescope (tried once, reverted; see git history).
+There is no mouse during arcade play, but one may still get plugged in for
+maintenance, so this is scoped to the launcher and games only, not the whole
+desktop session. `setup-arcade.sh` installs a fully transparent Xcursor
+theme (`arcade-blank`) for the arcade user; only `XCURSOR_THEME=arcade-blank`
+in the launcher's own environment (and every game's, inherited through it)
+points at it. A file manager or terminal opened from the normal desktop
+session never sees that variable and keeps the system's normal cursor. See
+`setup-arcade.sh`'s "cursor hiding" section for why this was chosen over
+routing games through a nested compositor such as Gamescope (tried once,
+reverted; see git history).
 
 ## Development
 

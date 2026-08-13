@@ -95,12 +95,18 @@ fi
 
 # --- cursor hiding ------------------------------------------------------------
 #
-# The cabinet has no mouse, so any cursor on screen is a stray one. Rather than
-# a compositor-level trick (Gamescope, tried and reverted - see git history),
-# this ships a fully transparent Xcursor theme and points the session at it.
-# That covers the launcher, every game (inherited via XCURSOR_THEME in the
-# systemd unit, through the same shell wrapper that already fixes the working
-# directory), and KWin's own cursor - with no runtime process of its own.
+# The cabinet has no mouse during arcade play, but a mouse may well get
+# plugged back in for maintenance (a file manager, a terminal, ...), so this
+# must hide the cursor for the launcher and games ONLY - not for the whole
+# desktop session. A session-wide cursor theme (KWin's own default, or GTK's)
+# would blind every other application too; earlier versions of this script
+# did exactly that and it was wrong. Instead, only the launcher's own
+# process - and every game, which inherits its environment through the shell
+# wrapper - gets XCURSOR_THEME=arcade-blank set (see systemd/arcade-launcher.service;
+# every game inherits it automatically, since OS.create_process does not
+# clear the environment before exec). A file manager launched from the
+# normal desktop session never sees that variable and keeps the system's
+# normal cursor.
 #
 # Installed per-user rather than system-wide: /usr is read-only on Bazzite's
 # ostree root, but ~/.local/share/icons is exactly where Xcursor already looks
@@ -166,30 +172,21 @@ Comment=Fully transparent cursor for the MakeGamesJLM arcade cabinet
 Inherits=
 EOF
 
-# Session-level: set it as the default cursor theme so KWin's own cursor uses
-# it too, not just clients that read XCURSOR_THEME from their environment.
+# Undo a session-wide cursor theme set by an earlier version of this script.
+# Deliberately narrow: only removes settings that hold exactly our theme
+# name, so it cannot clobber a value that was customized for some other
+# reason before or after this script last ran.
 if command -v kwriteconfig6 >/dev/null 2>&1; then
-	sudo -u "$ARCADE_USER" kwriteconfig6 --file kcminputrc --group Mouse --key cursorTheme "$CURSOR_THEME"
-else
-	echo "warning: kwriteconfig6 not found; KWin's own cursor theme was not set." >&2
-	echo "         set Settings > Mouse > Pointer theme to '$CURSOR_THEME' manually." >&2
+	current_theme="$(sudo -u "$ARCADE_USER" kreadconfig6 --file kcminputrc --group Mouse --key cursorTheme 2>/dev/null || true)"
+	if [[ "$current_theme" == "$CURSOR_THEME" ]]; then
+		sudo -u "$ARCADE_USER" kwriteconfig6 --file kcminputrc --group Mouse --key cursorTheme --delete
+		echo "Removed the session-wide cursor theme this script set previously - restart the session (log out/in) to see the cursor again on the desktop."
+	fi
 fi
-
-# GTK apps (file pickers, some game engines) read this instead. Written
-# idempotently - re-running this script must not pile up duplicate
-# gtk-cursor-theme-name lines on top of whatever else is already in there.
 for gtk_dir in gtk-3.0 gtk-4.0; do
-	sudo -u "$ARCADE_USER" mkdir -p "$ARCADE_HOME/.config/$gtk_dir"
 	settings_file="$ARCADE_HOME/.config/$gtk_dir/settings.ini"
-	if [[ -f "$settings_file" ]] && grep -q "^gtk-cursor-theme-name=" "$settings_file"; then
-		sudo -u "$ARCADE_USER" sed -i "s/^gtk-cursor-theme-name=.*/gtk-cursor-theme-name=$CURSOR_THEME/" "$settings_file"
-	elif [[ -f "$settings_file" ]] && grep -q "^\[Settings\]" "$settings_file"; then
-		sudo -u "$ARCADE_USER" sed -i "/^\[Settings\]/a gtk-cursor-theme-name=$CURSOR_THEME" "$settings_file"
-	else
-		sudo -u "$ARCADE_USER" tee -a "$settings_file" > /dev/null <<EOF
-[Settings]
-gtk-cursor-theme-name=$CURSOR_THEME
-EOF
+	if [[ -f "$settings_file" ]]; then
+		sudo -u "$ARCADE_USER" sed -i "/^gtk-cursor-theme-name=$CURSOR_THEME\$/d" "$settings_file"
 	fi
 done
 

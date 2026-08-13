@@ -99,8 +99,9 @@ func _on_game_ended(_game, _detail = null) -> void:
 
 func _on_held_game_vanished(_game: GameEntry) -> void:
 	_main.set_held_game(null)
-	if _state != State.ATTRACT:
-		_set_state(State.MENU)
+	# Re-derive _router.active either way: is_held just went false, and
+	# _set_state() is the only thing that re-reads it (see _gate_is_blocked).
+	_set_state(State.MENU if _state != State.ATTRACT else State.ATTRACT)
 
 
 func _resume_held_game() -> void:
@@ -144,7 +145,6 @@ func _open_overlay(from_state: int) -> void:
 		_launcher.hold()
 		_launcher.return_to_foreground()
 		_main.set_background_visible(false)
-	_router.active = true
 	_lock_ui()  # already locked if from_state == PLAYING; freshly locked otherwise
 	var context: int = (SystemOverlay.Context.PLAYING if from_state == State.PLAYING
 		else (SystemOverlay.Context.MENU_HELD if _launcher.is_held else SystemOverlay.Context.MENU_IDLE))
@@ -155,7 +155,6 @@ func _open_overlay(from_state: int) -> void:
 
 func _continue_overlay() -> void:
 	_close_overlay_ui()
-	_router.active = false
 	if _overlay_return_state == State.PLAYING:
 		_resume_for_playing()
 	else:
@@ -209,7 +208,6 @@ func _refresh_volume_readout() -> void:
 ## reaches a game.
 func _send_pause() -> void:
 	_close_overlay_ui()
-	_router.active = false
 	_resume_for_playing()
 	await get_tree().create_timer(Cfg.SEND_PAUSE_DELAY_SECONDS).timeout
 	Bus.inject("white")
@@ -220,7 +218,6 @@ func _send_pause() -> void:
 ## game's controller fd and replay the instant it resumes.
 func _back_to_launcher() -> void:
 	_close_overlay_ui()
-	_router.active = true
 	_main.set_held_game(_launcher.held_game)
 	_set_state(State.HELD_MENU)
 	_unlock_ui()
@@ -231,7 +228,6 @@ func _back_to_launcher() -> void:
 ## + (veto-guarded) unlock - nothing further to do here for that half.
 func _close_game() -> void:
 	_close_overlay_ui()
-	_router.active = false
 	if _launcher.is_held:
 		await _launcher.close_held()
 	else:
@@ -243,7 +239,6 @@ func _close_game() -> void:
 
 func _enter_attract() -> void:
 	_close_overlay_ui()
-	_router.active = false
 	_attract_ui.play()
 	_set_state(State.ATTRACT)  # stays locked - already was, for the overlay
 
@@ -295,15 +290,37 @@ func _on_kill_due() -> void:
 		await _launcher.close()
 	Bus.set_mode(Bus.MODE_PASS)
 	_main.set_held_game(null)
-	if _state != State.ATTRACT:
-		_set_state(State.MENU)
+	# Re-derive _router.active either way: is_held just went false, and
+	# _set_state() is the only thing that re-reads it (see _gate_is_blocked).
+	_set_state(State.MENU if _state != State.ATTRACT else State.ATTRACT)
 
 
 # --- state -----------------------------------------------------------------
 
+## The single source of truth for whether InputRouter should be synthesizing
+## input at all. It must mirror the gate exactly: while the gate is `pass`
+## the pad already drives Godot directly, so turning the router on too would
+## fire every nav action twice (once for real, once synthesized from the
+## feed, which is broadcast regardless of gate mode) - with wrapping
+## navigation, a double-step in a short row looks exactly like the opposite
+## direction. This used to be set ad hoc at each call site and drifted out
+## of sync at least twice (opening the overlay from the menu, and returning
+## from it to a still-held-menu); centralizing it here is what keeps it
+## honest going forward.
 func _set_state(state: int) -> void:
 	_state = state
 	Idle.playing = (state == State.PLAYING)
+	_router.active = _gate_is_blocked()
+
+
+func _gate_is_blocked() -> bool:
+	match _state:
+		State.OVERLAY, State.HELD_MENU:
+			return true
+		State.ATTRACT:
+			return _launcher.is_held
+		_:
+			return false
 
 
 ## Whether something above the grid still needs the input lock, regardless
