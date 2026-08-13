@@ -9,6 +9,9 @@ var dir_path: String = ""
 
 var name: String = ""
 var description: String = ""
+## Who made the game, from the optional "creators" key. Empty when the manifest
+## does not credit anyone.
+var creators: PackedStringArray = PackedStringArray()
 ## Absolute path of the binary to run.
 var executable: String = ""
 ## Extra arguments passed to the executable, from the optional "args" key.
@@ -27,6 +30,13 @@ var warnings: PackedStringArray = PackedStringArray()
 
 func players_label() -> String:
 	return "1 player" if players <= 1 else "%d players" % players
+
+
+## "By Ada, Grace", or "" when nobody is credited.
+func creators_label() -> String:
+	if creators.is_empty():
+		return ""
+	return "By " + ", ".join(creators)
 
 
 func _to_string() -> String:

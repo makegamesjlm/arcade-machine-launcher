@@ -27,6 +27,7 @@ the cabinet). The location is the launcher's default; override it with
 {
   "name": "Neon Drift",
   "description": "Two-player top-down racing through a rain-slick city.",
+  "creators": ["Ada Lovelace", "Grace Hopper"],
   "executable": "game.x86_64",
   "players": 2
 }
@@ -36,6 +37,7 @@ the cabinet). The location is the launcher's default; override it with
 | --- | --- | --- |
 | `name` | no | Falls back to the folder name |
 | `description` | no | Shown under the grid for the selected game |
+| `creators` | no | Name or array of names, credited under the game's title |
 | `executable` | **yes** | Relative to the game folder, or an absolute path |
 | `players` | no | Defaults to `1` |
 | `args` | no | Array of extra arguments for the executable |

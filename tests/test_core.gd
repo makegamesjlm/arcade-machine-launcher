@@ -60,12 +60,19 @@ func _test_scanner(fixtures: String) -> void:
 	var neon: GameEntry = by_id["neon-drift"]
 	_check(neon.players == 2, "neon-drift is 2 players, got %d" % neon.players)
 	_check(neon.players_label() == "2 players", "player label reads '%s'" % neon.players_label())
+	_check(neon.creators_label() == "By Ada Lovelace, Grace Hopper",
+		"neon-drift credits both creators, got '%s'" % neon.creators_label())
 	_check(neon.keymap.get("top_left") == "LB", "neon-drift keymap loaded, got %s" % [neon.keymap])
 	_check(neon.icon_path.ends_with("icon.png"), "neon-drift found its icon")
 	_check(neon.executable.ends_with("game.x86_64"), "neon-drift resolved its executable")
 	_check(neon.warnings.is_empty(), "a complete game has no warnings, got %s" % [neon.warnings])
 
 	var bad: GameEntry = by_id["bad-keymap"]
+	_check(bad.creators_label() == "By Solo Dev",
+		"a single creator may be a plain string, got '%s'" % bad.creators_label())
+	var cavern: GameEntry = by_id["cavern-brawl"]
+	_check(cavern.creators_label().is_empty(),
+		"an uncredited game has no creator line, got '%s'" % cavern.creators_label())
 	_check(bad.keymap.is_empty(), "an invalid keymap is not loaded, got %s" % [bad.keymap])
 	_check(_any_contains(bad.warnings, "L1"), "the rejected Xbox name is named in the warning")
 	_check(_any_contains(bad.warnings, "middle_left"), "the unknown cabinet button is named too")

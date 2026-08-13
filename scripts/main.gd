@@ -57,6 +57,7 @@ var _held_game_id := ""
 @onready var _problems: PanelContainer = %Problems
 @onready var _problems_text: Label = %ProblemsText
 @onready var _detail_name: Label = %DetailName
+@onready var _detail_creators: Label = %DetailCreators
 @onready var _detail_description: Label = %DetailDescription
 @onready var _hints: Label = %Hints
 @onready var _overlay: ColorRect = %Overlay
@@ -219,6 +220,7 @@ func _update_chrome() -> void:
 	if not has_games:
 		_empty_text.text = "No games found in %s" % Cfg.games_dir
 		_detail_name.text = "—"
+		_detail_creators.visible = false
 		_detail_description.text = "Add a folder with game.json, icon.png and keymap.json, then press the white button to refresh."
 
 
@@ -260,6 +262,10 @@ func _select(index: int) -> void:
 
 	var game := card.game
 	_detail_name.text = game.name
+	# Hidden rather than blanked, so an uncredited game does not leave a gap
+	# between its name and description.
+	_detail_creators.text = game.creators_label()
+	_detail_creators.visible = not _detail_creators.text.is_empty()
 	var description := (game.description if not game.description.is_empty()
 		else "No description in game.json.")
 	if game.id == _held_game_id:

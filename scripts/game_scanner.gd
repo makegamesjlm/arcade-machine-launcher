@@ -75,6 +75,7 @@ static func _load_game(dir_path: String, id: String, errors: PackedStringArray) 
 		game.name = id.replace("-", " ").replace("_", " ").capitalize()
 		game.warnings.append("game.json has no \"name\", using the folder name")
 	game.description = str(manifest.get("description", "")).strip_edges()
+	game.creators = _read_creators(manifest)
 	game.players = maxi(1, int(manifest.get("players", 1)))
 
 	for arg in manifest.get("args", []):
@@ -87,6 +88,20 @@ static func _load_game(dir_path: String, id: String, errors: PackedStringArray) 
 	_load_icon_path(game)
 	_load_keymap(game)
 	return game
+
+
+## "creators" is either a list of names or a single string, because a one-person
+## game written by hand will reach for the string form. Blank entries are
+## dropped so a stray "" does not turn into an empty name in the credit line.
+static func _read_creators(manifest: Dictionary) -> PackedStringArray:
+	var names := PackedStringArray()
+	var value: Variant = manifest.get("creators", [])
+	var raw: Array = value if typeof(value) == TYPE_ARRAY else [value]
+	for entry in raw:
+		var name := str(entry).strip_edges()
+		if not name.is_empty():
+			names.append(name)
+	return names
 
 
 static func _resolve_executable(manifest: Dictionary, dir_path: String, id: String,

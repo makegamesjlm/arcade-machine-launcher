@@ -21,6 +21,7 @@ game runs with this folder as its working directory.
 {
   "name": "Neon Drift",
   "description": "Two-player top-down racing.",
+  "creators": ["Ada Lovelace", "Grace Hopper"],
   "executable": "game.x86_64",
   "players": 2
 }
@@ -29,6 +30,9 @@ game runs with this folder as its working directory.
 - `executable` is required and must exactly match the filename, including case.
 - `name`, `description`, and `players` are shown in the launcher. `players`
   defaults to `1`.
+- `creators` credits whoever made the game, shown under the title in the
+  launcher. Use an array of names, or a single name as a plain string. Omit it
+  and no credit line is shown.
 - Optional `args` may contain an array of command-line arguments.
 
 ## `icon.png`

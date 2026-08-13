@@ -176,6 +176,16 @@ theme_override_fonts/font = ExtResource("2_bold_font")
 theme_override_font_sizes/font_size = 32
 text = "—"
 
+[node name="DetailCreators" type="Label" parent="Layout/Column/Detail/DetailMargin/DetailColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.749, 0.702, 0.404, 1)
+theme_override_font_sizes/font_size = 20
+autowrap_mode = 3
+max_lines_visible = 1
+text_overrun_behavior = 3
+
 [node name="DetailDescription" type="Label" parent="Layout/Column/Detail/DetailMargin/DetailColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
