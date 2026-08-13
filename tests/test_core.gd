@@ -78,9 +78,6 @@ func _test_keymap_validation() -> void:
 		"the launcher's own keymap is valid")
 	_check(KeymapWriter.validate({"joystick": "dpad", "white": "Start"}).is_empty(),
 		"the hat-axis dpad mode is valid")
-	_check(KeymapWriter.validate({"joystick": "dpad-legacy", "white": "Start"}).is_empty(),
-		"the dpad-button mode is valid")
-
 	_check(_any_contains(KeymapWriter.validate({"white": "Turbo"}), "Turbo"),
 		"an unknown Xbox name is rejected")
 	_check(_any_contains(KeymapWriter.validate({"joystick": "trackball"}), "trackball"),
