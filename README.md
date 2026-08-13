@@ -138,8 +138,9 @@ is running, the system overlay is open, or attract mode is showing.
    `/etc/shanwan-remap/keymap.json`.
 2. The launcher waits 2.2s for the remap service to hot-reload, so the game's
    first frame already has the right buttons.
-3. The launcher drops to 5 FPS and starts the executable, letting the game's
-   own fullscreen window cover it (it never minimizes — see below).
+3. The launcher drops to 5 FPS and starts the executable, staying on screen
+   until the game's own window comes up over it (it does not minimize here —
+   see below).
 4. It polls twice a second until the process is gone.
 5. The launcher's own keymap is restored, the window comes back to the
    foreground, and the games folder is rescanned.
@@ -250,17 +251,32 @@ pressed, and manually alt-tabbing to the launcher once makes the overlay work
 for the rest of the session — a user-initiated activation is the one kind
 focus stealing prevention always allows.
 
-### The launcher also never minimizes
+### Launching minimizes nothing; resuming minimizes
 
-Separately, `go_to_background()` lets the game's fullscreen window cover the
-launcher rather than minimizing it. On Wayland `xdg-shell` offers
-`xdg_toplevel.set_minimized` and no matching unset — the protocol says outright
-that there is no way to unset minimization on a surface, or even to ask whether
-one is minimized. Only the compositor can restore a minimized window.
+Getting out of a game's way is two different problems depending on whether the
+game's window already exists, and the launcher treats them separately.
 
-This is not what caused the bug above (with focus stealing prevention off, KWin
-restores the window as part of honouring the activation), but it removes a
-needless dependency on that behaviour and is worth keeping.
+**Launching** (`GameLauncher.go_to_background()`) does not minimize. The game
+maps a brand new fullscreen window, which the compositor stacks on top and
+activates on its own — guaranteed, since focus stealing prevention is set to
+"none", where new windows always activate. Minimizing here would unmap the
+launcher *before* the game has drawn anything, leaving the bare desktop on
+screen for the second or so the game takes to come up. Staying put means the
+player keeps looking at the launcher until the game replaces it.
+
+**Resuming** (`GameLauncher.reveal_resumed_game()`) does minimize, and has to.
+Resuming a held game or picking Continue in the system overlay only sends
+`SIGCONT` — that thaws the process but re-maps and re-activates nothing, and
+the launcher was deliberately raised above the game's window to show the
+overlay in the first place. Without the minimize, Continue leaves the grid
+sitting on top of a running, invisible game. Here minimizing is free: the
+game's window is already mapped directly underneath, so it is what appears the
+instant the launcher goes away — no gap, no desktop flash.
+
+That a client cannot un-minimize itself on Wayland (`xdg-shell` has
+`xdg_toplevel.set_minimized` and no matching unset) does not matter: the
+compositor restores the window as part of honouring the activation request,
+which is exactly what focus stealing prevention being off buys.
 
 `main.gd` logs the display backend at startup (`display server=… session=…`).
 Check it first if window behaviour is ever in question, since none of the X11

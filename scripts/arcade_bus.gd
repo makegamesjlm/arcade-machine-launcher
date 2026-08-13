@@ -6,7 +6,7 @@ extends Node
 ##   - `button`/`hat` signals: every physical event, straight off the
 ##     cabinet's controllers, independent of whichever keymap happens to be
 ##     installed. This is what lets the launcher see input at all while a
-##     game is frozen and blocked (covered, or navigating the system
+##     game is frozen and blocked (behind a game, or navigating the system
 ##     overlay) - Godot's own joypad input goes silent in that state, since
 ##     the remapper has stopped writing to the virtual pad.
 ##   - `set_mode()` / `inject()`: flip the remapper's OutputGate, or send one

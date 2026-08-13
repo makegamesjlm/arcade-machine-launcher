@@ -7,7 +7,7 @@ extends Node
 ##
 ## States:
 ##   MENU      - the grid, nothing held, nothing playing
-##   PLAYING   - a game owns the screen (main.gd covered by it)
+##   PLAYING   - a game owns the screen (main.gd behind or below it)
 ##   OVERLAY   - the system overlay is open, over a frozen game or the menu
 ##   HELD_MENU - the grid is showing, with a game held frozen in the background
 ##   ATTRACT   - the idle video, with or without a game held behind it
@@ -108,7 +108,7 @@ func _resume_held_game() -> void:
 	_main.set_held_game(null)
 	_launcher.resume_held()
 	Bus.set_mode(Bus.MODE_PASS)
-	_launcher.go_to_background()
+	_launcher.reveal_resumed_game()  # its window is already there, behind ours
 	_set_state(State.PLAYING)
 	_lock_ui()  # no launch() call happens here, so nothing else will
 
@@ -165,7 +165,7 @@ func _continue_overlay() -> void:
 func _resume_for_playing() -> void:
 	_launcher.resume_held()
 	Bus.set_mode(Bus.MODE_PASS)
-	_launcher.go_to_background()
+	_launcher.reveal_resumed_game()  # its window is already there, behind ours
 	_set_state(State.PLAYING)
 
 

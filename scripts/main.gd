@@ -72,7 +72,7 @@ var _held_game_id := ""
 func _ready() -> void:
 	# Which display backend Godot actually picked decides whether the launcher
 	# can raise its own window over a frozen game at all - see README's
-	# "window stacking". On Wayland a client cannot raise or un-minimize
+	# "window activation". On Wayland a client cannot raise or un-minimize
 	# itself by protocol, so the answer here is the first thing to check when
 	# the system overlay does not appear.
 	print("[launcher] display server=%s session=%s desktop=%s" % [

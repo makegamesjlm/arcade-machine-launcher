@@ -6,7 +6,8 @@ extends Node
 ## Normal sequence:
 ##   1. install the game's keymap.json at Cfg.keymap_path
 ##   2. wait out the remap service's reload window
-##   3. start the executable and step out of the way (covered, near-idle)
+##   3. start the executable and step out of the way (near-idle, left for the
+##      game's own window to cover - see go_to_background())
 ##   4. poll until the process is gone
 ##   5. restore the launcher's own keymap and come back to the foreground
 ##
@@ -316,37 +317,51 @@ func _terminate_current() -> void:
 ## also used by SessionController around the overlay/attract cycle (resuming
 ## into PLAYING), not just internally around the launch/return cycle.
 ##
-## Deliberately does NOT minimize, which is what it used to do and what made
-## the system overlay impossible to show over a running game. On Wayland -
-## which is what the cabinet runs, KDE Plasma 6 on Bazzite - minimizing is a
-## one-way door. xdg-shell has `xdg_toplevel.set_minimized` and no matching
-## unset; the protocol says outright that there is no way to unset
-## minimization on a surface, and no way to even ask whether it is minimized.
-## Only the compositor can restore a minimized window. So the launcher
-## minimized itself the moment a game started and could never bring itself
-## back, no matter what return_to_foreground() tried - the overlay was being
-## opened, correctly, on a window nobody could ever see again. (Freezing the
-## game still worked, which is exactly why the symptom looked like a drawing
-## or stacking problem rather than a window-state one.)
+## Used when a game is about to map its own window: the compositor stacks that
+## new window on top and activates it (guaranteed, since setup-arcade.sh sets
+## focus stealing prevention to "none", where new windows always activate), so
+## there is nothing to do here but stop competing for the GPU.
 ##
-## Staying mapped is enough to get out of the way: the game maps its own
-## fullscreen window and the compositor stacks it on top, covering this one,
-## and a covered window is not composited. BACKGROUND_MAX_FPS already handles
-## not competing for the GPU, which was the other reason to minimize.
+## Deliberately does NOT minimize. Minimizing here would unmap this window
+## before the game has drawn anything, leaving the bare desktop visible for
+## the second or so the game takes to come up. Staying put means the player
+## keeps looking at the launcher until the game itself replaces it.
+##
+## The resume path is the opposite case and does need to minimize - see
+## reveal_resumed_game().
 func go_to_background() -> void:
 	Engine.max_fps = BACKGROUND_MAX_FPS
+
+
+## Used when returning to a game whose window already exists - resuming a held
+## game, or Continue from the system overlay. Unlike a fresh launch there is no
+## new window coming: SIGCONT thaws the process but re-maps and re-activates
+## nothing, and this window was deliberately raised above the game's to show
+## the overlay. Something has to move this one out of the way, or Continue
+## leaves the grid sitting on top of a running, invisible game.
+##
+## Minimizing is that something, and here it costs nothing: the game's window
+## is already mapped directly underneath, so it is what shows the instant this
+## one goes away - no gap, and none of the desktop flash that minimizing on
+## the launch path would cause.
+##
+## A client cannot un-minimize itself on Wayland (xdg-shell has
+## `xdg_toplevel.set_minimized` and no matching unset), which does not matter:
+## the compositor restores this window as part of honouring the activation
+## request in return_to_foreground(). See README's "Window activation".
+func reveal_resumed_game() -> void:
+	Engine.max_fps = BACKGROUND_MAX_FPS
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED)
 
 
 ## Brings the launcher back over whatever is on screen, including a game that
 ## was just frozen but is still mapped and still fullscreen.
 ##
-## This only works because go_to_background() no longer minimizes: a mapped
-## window can be raised, an iconified one cannot restore itself at all on
-## Wayland. Manually alt-tabbing to the launcher once was the workaround for
-## exactly this - it is the compositor doing the un-minimize that the client
-## is not allowed to do - and alt-tabbing back into the game restacks without
-## re-minimizing, which is why the overlay kept working for the rest of that
-## session.
+## Depends on the cabinet having KWin's focus stealing prevention turned off
+## (setup-arcade.sh, "window activation"). Without it the compositor will not
+## let an application activate itself: it downgrades the request below to a
+## "demands attention" hint, leaving the window where it was with its task
+## manager entry glowing orange, and the system overlay never appears.
 func return_to_foreground() -> void:
 	Engine.max_fps = 0
 	DisplayServer.window_set_mode(
