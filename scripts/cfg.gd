@@ -102,9 +102,10 @@ const CONTROL_PORT := 47811
 const CONTROL_PROTOCOL_VERSION := 1
 const CONTROL_RECONNECT_SECONDS := 2.0
 
-## Swallows the button that woke the attract screen so it can't also select
-## whatever the grid happens to be focused on, mirroring RETURN_LOCKOUT_SECONDS
-## in game_launcher.gd.
+## Swallows the button that dismissed a full-screen surface so it can't also
+## select whatever the grid happens to be focused on: the press that wakes the
+## attract screen, or the one that chose Continue / Back to Launcher in the
+## system overlay. Mirrors RETURN_LOCKOUT_SECONDS in game_launcher.gd.
 const WAKE_LOCKOUT_SECONDS := 0.4
 
 

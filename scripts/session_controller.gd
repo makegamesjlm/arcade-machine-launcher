@@ -164,8 +164,11 @@ func _continue_overlay() -> void:
 	if _overlay_return_state == State.PLAYING:
 		_resume_for_playing()
 	else:
+		# MENU or HELD_MENU - the grid is the surface again, but not instantly
+		# interactive: the very nav_select that chose Continue must not also land
+		# on the grid and launch whatever tile is focused. See _swallow_then_unlock.
 		_set_state(_overlay_return_state)
-		_unlock_ui()  # MENU or HELD_MENU - the grid is interactive again
+		_swallow_then_unlock()
 
 
 func _resume_for_playing() -> void:
@@ -231,6 +234,19 @@ func _back_to_launcher() -> void:
 	# goes back to describing whatever is selected.
 	_main.update_detail()
 	_set_state(State.HELD_MENU)
+	_swallow_then_unlock()  # same as Continue: don't let this press hit the grid
+
+
+## Returns the grid to interactive, but only after a short lockout that swallows
+## the very button press that dismissed the overlay. Without it, the nav_select
+## that activated Continue (or Back to Launcher) keeps propagating - directly, or
+## as a control-channel feed event a frame or two later - and lands on the grid,
+## which reads it as "launch the focused tile". Mirrors the wake-from-attract
+## swallow in _on_attract_woken, and is safe against a re-lock during the window:
+## set_ui_locked(false) is vetoed by wants_ui_locked() if an overlay or attract
+## has meanwhile taken the screen again.
+func _swallow_then_unlock() -> void:
+	await get_tree().create_timer(Cfg.WAKE_LOCKOUT_SECONDS).timeout
 	_unlock_ui()
 
 
