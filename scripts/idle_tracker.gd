@@ -43,11 +43,11 @@ func _input(_event: InputEvent) -> void:
 
 func _process(_delta: float) -> void:
 	var idle := idle_seconds()
-	var attract_threshold: float = Cfg.ATTRACT_GAME_SECONDS if playing else Cfg.ATTRACT_MENU_SECONDS
+	var attract_threshold: float = Cfg.attract_game_seconds if playing else Cfg.attract_menu_seconds
 	if idle >= attract_threshold and not _attract_fired:
 		_attract_fired = true
 		attract_due.emit()
-	if idle >= Cfg.IDLE_KILL_SECONDS and not _kill_fired:
+	if idle >= Cfg.idle_kill_seconds and not _kill_fired:
 		_kill_fired = true
 		kill_due.emit()
 

@@ -19,6 +19,7 @@ func _ready() -> void:
 	_test_white_is_a_system_button()
 	_test_xbox_to_joy_button_table()
 	_test_idle_thresholds()
+	_test_config_loading()
 	_test_system_overlay_navigation()
 
 	print("\n%d checks, %d failed" % [_checks, _failures])
@@ -228,12 +229,75 @@ func _test_xbox_to_joy_button_table() -> void:
 
 func _test_idle_thresholds() -> void:
 	print("\n-- idle thresholds")
-	_check(Cfg.ATTRACT_MENU_SECONDS < Cfg.ATTRACT_GAME_SECONDS,
+	_check(Cfg.attract_menu_seconds < Cfg.attract_game_seconds,
 		"the menu attract timeout is shorter than the in-game one, got %s < %s"
-			% [Cfg.ATTRACT_MENU_SECONDS, Cfg.ATTRACT_GAME_SECONDS])
-	_check(Cfg.ATTRACT_GAME_SECONDS < Cfg.IDLE_KILL_SECONDS,
+			% [Cfg.attract_menu_seconds, Cfg.attract_game_seconds])
+	_check(Cfg.attract_game_seconds < Cfg.idle_kill_seconds,
 		"the idle-kill timeout is longer than either attract timeout, got %s < %s"
-			% [Cfg.ATTRACT_GAME_SECONDS, Cfg.IDLE_KILL_SECONDS])
+			% [Cfg.attract_game_seconds, Cfg.idle_kill_seconds])
+
+
+func _test_config_loading() -> void:
+	print("\n-- config loading")
+	var dir := OS.get_cache_dir().path_join("arcade-launcher-test")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var path := dir.path_join("config.json")
+	var saved_path := Cfg.config_path
+	Cfg.config_path = path
+
+	# A missing file is not a problem: the defaults stand and nothing is flagged.
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+	Cfg._load_config()
+	_check(Cfg.config_problems.is_empty() and Cfg.attract_menu_seconds == Cfg.DEFAULT_ATTRACT_MENU_SECONDS,
+		"a missing config keeps defaults with no problems, got %s" % [Cfg.config_problems])
+
+	# A good file overrides only the keys it names; the rest keep their defaults.
+	_write(path, '{"attract_menu_seconds": 45, "close_grace_seconds": 3.5}')
+	Cfg._load_config()
+	_check(Cfg.config_problems.is_empty(), "a valid config loads cleanly, got %s" % [Cfg.config_problems])
+	_check(Cfg.attract_menu_seconds == 45.0, "an int override is read as seconds, got %s" % Cfg.attract_menu_seconds)
+	_check(Cfg.close_grace_seconds == 3.5, "a float override is read, got %s" % Cfg.close_grace_seconds)
+	_check(Cfg.idle_kill_seconds == Cfg.DEFAULT_IDLE_KILL_SECONDS,
+		"an unspecified key keeps its default, got %s" % Cfg.idle_kill_seconds)
+
+	# A non-numeric value, a non-positive value, and an unknown key are each
+	# flagged, and the affected timing falls back to its default.
+	_write(path, '{"keymap_reload_seconds": "soon", "send_pause_delay_seconds": 0, "wat": 5}')
+	Cfg._load_config()
+	_check(Cfg.keymap_reload_seconds == Cfg.DEFAULT_KEYMAP_RELOAD_SECONDS,
+		"a non-numeric value falls back, got %s" % Cfg.keymap_reload_seconds)
+	_check(Cfg.send_pause_delay_seconds == Cfg.DEFAULT_SEND_PAUSE_DELAY_SECONDS,
+		"a non-positive value falls back, got %s" % Cfg.send_pause_delay_seconds)
+	_check(_any_contains(Cfg.config_problems, "keymap_reload_seconds") and _any_contains(Cfg.config_problems, "must be a number"),
+		"a non-numeric value is flagged")
+	_check(_any_contains(Cfg.config_problems, "send_pause_delay_seconds") and _any_contains(Cfg.config_problems, "greater than 0"),
+		"a non-positive value is flagged")
+	_check(_any_contains(Cfg.config_problems, "wat"), "an unknown key is flagged")
+
+	# Inverted idle ordering still loads, but is called out.
+	_write(path, '{"attract_menu_seconds": 500, "attract_game_seconds": 200}')
+	Cfg._load_config()
+	_check(_any_contains(Cfg.config_problems, "out of order"),
+		"attract timings that invert the expected order are flagged")
+
+	# A file that is valid JSON but not an object keeps every default.
+	_write(path, '[1, 2, 3]')
+	Cfg._load_config()
+	_check(_any_contains(Cfg.config_problems, "not a JSON object")
+			and Cfg.attract_menu_seconds == Cfg.DEFAULT_ATTRACT_MENU_SECONDS,
+		"a non-object config keeps defaults and is flagged")
+
+	# Leave Cfg the way the rest of the suite (and a real run) expects it.
+	DirAccess.remove_absolute(path)
+	Cfg.config_path = saved_path
+	Cfg._load_config()
+
+
+func _write(path: String, text: String) -> void:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(text)
+	file.close()
 
 
 func _test_system_overlay_navigation() -> void:

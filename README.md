@@ -191,11 +191,35 @@ as anything separate: its tile reads **RUNNING**, the same as it did while it
 was on screen, because from the player's side it is still open. Selecting it
 resumes it where it was left.
 
+## Timings (`config.json`)
+
+The behavioural timings below live in `~/Nextcloud/Arcade/config.json`, next to
+the attract video, so they sync onto the cabinet and can be retuned by editing
+one file - no rebuild or redeploy, the same story as games and the video
+(override the path with `--config-path` / `ARCADE_CONFIG_PATH`). The file is
+optional: every value has a sane default, and a fresh cabinet with no file runs
+on those. Copy [`config.example.json`](config.example.json) to get started.
+
+| Key | Default | What it controls |
+| --- | --- | --- |
+| `attract_menu_seconds` | 120 | Idle on the menu before the attract/sleep video starts |
+| `attract_game_seconds` | 300 | Idle while a game is being played before attract starts |
+| `idle_kill_seconds` | 1800 | Idle before a running or held game is force-closed |
+| `keymap_reload_seconds` | 2.2 | Wait for the remap service to pick up a new keymap before a game starts |
+| `close_grace_seconds` | 2.0 | Grace between `SIGTERM` and `SIGKILL` when closing a game |
+| `send_pause_delay_seconds` | 0.25 | Delay after resuming a game before "Send pause" injects the white press |
+| `failed_message_seconds` | 15 | How long a "could not start" message waits before returning to the grid |
+
+Each value must be a positive number. Anything missing, mistyped, or out of
+range falls back to its default and is shown as a `config:` problem on the grid
+(and logged), rather than stranding the cabinet. Only the keys above are
+recognised; any other key is reported and ignored.
+
 ## Attract mode
 
-A looping, silent idle video plays after 120 seconds on the menu, or 300
-seconds while a game is being played (so a player thinking about a puzzle
-is not yanked out after two minutes) - either way pulled from
+A looping, silent idle video plays after `attract_menu_seconds` on the menu, or
+`attract_game_seconds` while a game is being played (so a player thinking about
+a puzzle is not yanked out after two minutes) - either way pulled from
 `~/Nextcloud/Arcade/attract.ogv` (override with `--attract-video` /
 `ARCADE_ATTRACT_VIDEO`), Ogg Theora only, since that is all Godot 4 decodes.
 A missing or unreadable file falls back to a built-in static screen. Content
@@ -207,8 +231,9 @@ running when attract started, it stays alive, held, in the background.
 
 ## Idle kill
 
-After 30 minutes with no input at all, whatever game is running or held is
-killed, so the cabinet does not run unattended overnight. Nothing else
+After `idle_kill_seconds` (30 minutes by default) with no input at all,
+whatever game is running or held is killed, so the cabinet does not run
+unattended overnight. Nothing else
 happens at that mark: no display blanking, and the attract video (if already
 looping) keeps looping right through it.
 
@@ -295,8 +320,9 @@ The launcher can run on a desktop against fake games. Paths are overridable:
 godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json
 ```
 
-`--games-dir`, `--keymap-path`, `--attract-video` and `--no-fullscreen` also
-read from `ARCADE_GAMES_DIR`, `ARCADE_KEYMAP_PATH` and `ARCADE_ATTRACT_VIDEO`.
+`--games-dir`, `--keymap-path`, `--attract-video`, `--config-path` and
+`--no-fullscreen` also read from `ARCADE_GAMES_DIR`, `ARCADE_KEYMAP_PATH`,
+`ARCADE_ATTRACT_VIDEO` and `ARCADE_CONFIG_PATH`.
 
 The system overlay, attract mode, and held games all depend on
 shanwan-remap's control channel (see shanwan-remap/README.md), which has

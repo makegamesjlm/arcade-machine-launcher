@@ -1,0 +1,9 @@
+{
+  "attract_menu_seconds": 120,
+  "attract_game_seconds": 300,
+  "idle_kill_seconds": 1800,
+  "keymap_reload_seconds": 2.2,
+  "close_grace_seconds": 2.0,
+  "send_pause_delay_seconds": 0.25,
+  "failed_message_seconds": 15
+}

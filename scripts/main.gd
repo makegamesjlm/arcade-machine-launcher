@@ -146,6 +146,11 @@ func refresh() -> void:
 		var keymap_error := _launcher.apply_launcher_keymap()
 		if not keymap_error.is_empty():
 			_scan_problems.append("controller mapping: " + keymap_error)
+	# Anything wrong with config.json (bad value, unknown key) is surfaced the
+	# same way scan and keymap trouble is, so a mistyped timing is visible on
+	# the cabinet rather than only in the journal.
+	for problem in Cfg.config_problems:
+		_scan_problems.append("config: " + problem)
 	_scan_problems.append_array(result.errors)
 	_scan_problems.append_array(result.warnings())
 
@@ -480,7 +485,7 @@ func _on_failed(game: GameEntry, reason: String) -> void:
 
 	# Wait for an explicit dismissal so the message is not missed, but do not
 	# strand the cabinet if nobody is standing at it.
-	var timeout := get_tree().create_timer(15.0)
+	var timeout := get_tree().create_timer(Cfg.failed_message_seconds)
 	while true:
 		await get_tree().process_frame
 		if Input.is_action_just_pressed("nav_back") or timeout.time_left <= 0.0:

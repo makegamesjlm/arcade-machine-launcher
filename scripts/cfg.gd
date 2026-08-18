@@ -23,6 +23,12 @@ const DEFAULT_KEYMAP_PATH := "/etc/shanwan-remap/keymap.json"
 ## built-in static screen (see scenes/attract.tscn) rather than showing black.
 const DEFAULT_ATTRACT_VIDEO := "~/Nextcloud/Arcade/attract.ogv"
 
+## Operator-tunable timings (see the "Operator-tunable timings" section below)
+## live in a JSON file next to the attract video, so cabinet behaviour syncs and
+## updates the same way games and the video do. A missing file is fine - every
+## value has a sane default. See config.example.json for the documented shape.
+const DEFAULT_CONFIG_PATH := "~/Nextcloud/Arcade/config.json"
+
 ## Physical buttons on the cabinet, in the order they are laid out:
 ##   [top_left]    [top_middle]    [top_right]
 ##   [bottom_left] [bottom_middle] [bottom_right]
@@ -83,14 +89,6 @@ const XBOX_TO_JOY_BUTTON := {
 	"RS": JOY_BUTTON_RIGHT_STICK,
 }
 
-## How long the shanwan-remap service is documented to take to pick up a new
-## keymap. The launcher waits this out before starting the game so the first
-## frame of gameplay already has the right mapping. Not paid while a held
-## game resumes - its keymap never left, so InputRouter's mapping (which
-## goes through LAUNCHER_KEYMAP, not whatever is on disk) is all that
-## matters until it does.
-const KEYMAP_RELOAD_SECONDS := 2.2
-
 ## How often to check whether the running game has exited.
 const PROCESS_POLL_SECONDS := 0.5
 
@@ -104,28 +102,83 @@ const CONTROL_PORT := 47811
 const CONTROL_PROTOCOL_VERSION := 1
 const CONTROL_RECONNECT_SECONDS := 2.0
 
-## Idle thresholds. Menu (including a held-menu or an open overlay - nobody
-## is actually playing in either) is short; mid-game is long, so a player
-## thinking about a puzzle is not yanked out after two minutes. Idle-kill is
-## independent of attract mode entirely: it fires at its own mark whether or
-## not the video is already looping, and does nothing else when it does.
-const ATTRACT_MENU_SECONDS := 120.0
-const ATTRACT_GAME_SECONDS := 300.0
-const IDLE_KILL_SECONDS := 1800.0
-
-## How long "Send pause" waits after resuming the game before injecting the
-## white press, so the game is actually scheduled and reading its controller
-## again rather than still waking up from SIGSTOP.
-const SEND_PAUSE_DELAY_SECONDS := 0.25
-
 ## Swallows the button that woke the attract screen so it can't also select
 ## whatever the grid happens to be focused on, mirroring RETURN_LOCKOUT_SECONDS
 ## in game_launcher.gd.
 const WAKE_LOCKOUT_SECONDS := 0.4
 
+
+# --- Operator-tunable timings --------------------------------------------------
+#
+# These are read from config.json in the Nextcloud folder (DEFAULT_CONFIG_PATH,
+# next to the attract video), so cabinet behaviour can be retuned by editing one
+# synced file - no rebuild or redeploy, the same story as games and the attract
+# video. Each falls back to the DEFAULT_ constant beside it when the file is
+# absent, the key is missing, or the value is not a positive number; every such
+# fallback is surfaced through config_problems (shown on the grid) rather than
+# hidden. See config.example.json for the documented shape and _load_config().
+
+## How long the shanwan-remap service is documented to take to pick up a new
+## keymap. The launcher waits this out before starting the game so the first
+## frame of gameplay already has the right mapping. Not paid while a held
+## game resumes - its keymap never left, so InputRouter's mapping (which
+## goes through LAUNCHER_KEYMAP, not whatever is on disk) is all that
+## matters until it does.
+const DEFAULT_KEYMAP_RELOAD_SECONDS := 2.2
+var keymap_reload_seconds := DEFAULT_KEYMAP_RELOAD_SECONDS
+
+## Idle thresholds. Menu (including a held-menu or an open overlay - nobody
+## is actually playing in either) is short; mid-game is long, so a player
+## thinking about a puzzle is not yanked out after two minutes. Idle-kill is
+## independent of attract mode entirely: it fires at its own mark whether or
+## not the video is already looping, and does nothing else when it does. A
+## config that inverts the expected order (menu < game < kill) still loads,
+## but is flagged in config_problems.
+const DEFAULT_ATTRACT_MENU_SECONDS := 120.0
+const DEFAULT_ATTRACT_GAME_SECONDS := 300.0
+const DEFAULT_IDLE_KILL_SECONDS := 1800.0
+var attract_menu_seconds := DEFAULT_ATTRACT_MENU_SECONDS
+var attract_game_seconds := DEFAULT_ATTRACT_GAME_SECONDS
+var idle_kill_seconds := DEFAULT_IDLE_KILL_SECONDS
+
+## Grace period between SIGTERM and SIGKILL when closing a game outright, so a
+## well-behaved game gets a moment to save and exit before it is forced.
+const DEFAULT_CLOSE_GRACE_SECONDS := 2.0
+var close_grace_seconds := DEFAULT_CLOSE_GRACE_SECONDS
+
+## How long "Send pause" waits after resuming the game before injecting the
+## white press, so the game is actually scheduled and reading its controller
+## again rather than still waking up from SIGSTOP.
+const DEFAULT_SEND_PAUSE_DELAY_SECONDS := 0.25
+var send_pause_delay_seconds := DEFAULT_SEND_PAUSE_DELAY_SECONDS
+
+## How long the "could not start <game>" screen waits for a deliberate dismissal
+## before returning to the grid on its own - long enough that a failure is not
+## missed, short enough that an unattended cabinet is not stranded on it.
+const DEFAULT_FAILED_MESSAGE_SECONDS := 15.0
+var failed_message_seconds := DEFAULT_FAILED_MESSAGE_SECONDS
+
+## The keys config.json may contain, each pointing at its default. Drives both
+## the unknown-key check and the per-key fallback in _load_config().
+const TIMING_DEFAULTS := {
+	"keymap_reload_seconds": DEFAULT_KEYMAP_RELOAD_SECONDS,
+	"attract_menu_seconds": DEFAULT_ATTRACT_MENU_SECONDS,
+	"attract_game_seconds": DEFAULT_ATTRACT_GAME_SECONDS,
+	"idle_kill_seconds": DEFAULT_IDLE_KILL_SECONDS,
+	"close_grace_seconds": DEFAULT_CLOSE_GRACE_SECONDS,
+	"send_pause_delay_seconds": DEFAULT_SEND_PAUSE_DELAY_SECONDS,
+	"failed_message_seconds": DEFAULT_FAILED_MESSAGE_SECONDS,
+}
+
 var games_dir: String = DEFAULT_GAMES_DIR
 var keymap_path: String = DEFAULT_KEYMAP_PATH
 var attract_video: String = DEFAULT_ATTRACT_VIDEO
+var config_path: String = DEFAULT_CONFIG_PATH
+
+## Anything wrong with config.json - a bad value that fell back to its default,
+## an unknown key, a file that would not parse. Empty when the config is clean
+## or simply absent. main.gd folds these into the on-screen problem list.
+var config_problems: PackedStringArray = PackedStringArray()
 
 ## Set by --no-fullscreen, for debugging on a desktop.
 var fullscreen: bool = true
@@ -139,8 +192,9 @@ var simulate_launch: bool = false
 func _ready() -> void:
 	_apply_environment()
 	_apply_command_line()
-	print("[cfg] games_dir=%s keymap_path=%s attract_video=%s simulate_launch=%s"
-		% [games_dir, keymap_path, attract_video, simulate_launch])
+	_load_config()
+	print("[cfg] games_dir=%s keymap_path=%s attract_video=%s config_path=%s simulate_launch=%s"
+		% [games_dir, keymap_path, attract_video, config_path, simulate_launch])
 
 
 func _apply_environment() -> void:
@@ -153,6 +207,9 @@ func _apply_environment() -> void:
 	var env_attract := OS.get_environment("ARCADE_ATTRACT_VIDEO")
 	if not env_attract.is_empty():
 		attract_video = env_attract
+	var env_config := OS.get_environment("ARCADE_CONFIG_PATH")
+	if not env_config.is_empty():
+		config_path = env_config
 
 
 func _apply_command_line() -> void:
@@ -165,19 +222,90 @@ func _apply_command_line() -> void:
 			keymap_path = arg.trim_prefix("--keymap-path=")
 		elif arg.begins_with("--attract-video="):
 			attract_video = arg.trim_prefix("--attract-video=")
+		elif arg.begins_with("--config-path="):
+			config_path = arg.trim_prefix("--config-path=")
 		elif arg == "--no-fullscreen":
 			fullscreen = false
 		elif arg == "--simulate-launch":
 			simulate_launch = true
 	games_dir = _normalize_path(games_dir)
 	attract_video = _normalize_path(attract_video)
+	config_path = _normalize_path(config_path)
+
+
+## Overlays the operator-tunable timings from config.json onto their defaults.
+## Absent file: nothing to do, defaults stand (a fresh cabinet legitimately has
+## no config yet). Present but broken - unparseable, not an object, a bad value:
+## the launcher still comes up on defaults, with the specifics in config_problems
+## so they show on the grid rather than stranding the cabinet on a hard error.
+func _load_config() -> void:
+	config_problems = PackedStringArray()
+	# Start from the defaults every time, so this reads as "defaults, then
+	# overlay the file" on every path - including the early returns below, and
+	# any future re-read of a changed config, not just the single startup call.
+	keymap_reload_seconds = DEFAULT_KEYMAP_RELOAD_SECONDS
+	attract_menu_seconds = DEFAULT_ATTRACT_MENU_SECONDS
+	attract_game_seconds = DEFAULT_ATTRACT_GAME_SECONDS
+	idle_kill_seconds = DEFAULT_IDLE_KILL_SECONDS
+	close_grace_seconds = DEFAULT_CLOSE_GRACE_SECONDS
+	send_pause_delay_seconds = DEFAULT_SEND_PAUSE_DELAY_SECONDS
+	failed_message_seconds = DEFAULT_FAILED_MESSAGE_SECONDS
+
+	if not FileAccess.file_exists(config_path):
+		return
+
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(config_path))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		config_problems.append(
+			"config at %s is not a JSON object - keeping default timings" % config_path)
+		return
+
+	for key in parsed:
+		if not TIMING_DEFAULTS.has(key):
+			config_problems.append("unknown config key \"%s\" - ignored" % key)
+
+	keymap_reload_seconds = _read_seconds(parsed, "keymap_reload_seconds")
+	attract_menu_seconds = _read_seconds(parsed, "attract_menu_seconds")
+	attract_game_seconds = _read_seconds(parsed, "attract_game_seconds")
+	idle_kill_seconds = _read_seconds(parsed, "idle_kill_seconds")
+	close_grace_seconds = _read_seconds(parsed, "close_grace_seconds")
+	send_pause_delay_seconds = _read_seconds(parsed, "send_pause_delay_seconds")
+	failed_message_seconds = _read_seconds(parsed, "failed_message_seconds")
+
+	# The values still load, but flag an inversion: idle-kill firing before an
+	# attract timeout, or the menu timeout outlasting the in-game one, is almost
+	# always a typo rather than an intent.
+	if not (attract_menu_seconds < attract_game_seconds
+			and attract_game_seconds < idle_kill_seconds):
+		config_problems.append(
+			("attract/idle timings are out of order (expected attract_menu < "
+			+ "attract_game < idle_kill; got %s < %s < %s)")
+				% [attract_menu_seconds, attract_game_seconds, idle_kill_seconds])
+
+
+## Reads one timing key, keeping its default when the key is absent, non-numeric,
+## or not positive. JSON has no integer/float distinction to rely on, so both are
+## accepted and coerced to float.
+func _read_seconds(cfg: Dictionary, key: String) -> float:
+	var fallback: float = TIMING_DEFAULTS[key]
+	if not cfg.has(key):
+		return fallback
+	var value: Variant = cfg[key]
+	if typeof(value) != TYPE_FLOAT and typeof(value) != TYPE_INT:
+		config_problems.append("\"%s\" must be a number - keeping %s" % [key, fallback])
+		return fallback
+	var seconds := float(value)
+	if seconds <= 0.0:
+		config_problems.append("\"%s\" must be greater than 0 - keeping %s" % [key, fallback])
+		return fallback
+	return seconds
 
 
 ## Turns a possibly-relative directory or file path into an absolute one
 ## without a trailing slash, so path joins (and file-existence checks) below
-## stay predictable. Used for games_dir, keymap_path is left alone (it is
-## meant to point straight at /etc/shanwan-remap on the cabinet), and
-## attract_video.
+## stay predictable. Used for games_dir, attract_video and config_path;
+## keymap_path is left alone (it is meant to point straight at
+## /etc/shanwan-remap on the cabinet).
 func _normalize_path(path: String) -> String:
 	var result := path
 	# Expand a leading ~ to the running user's home. Godot leaves it literal, and

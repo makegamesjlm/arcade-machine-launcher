@@ -7,4 +7,8 @@
 
 # Runtime keymap written by the Windows development simulator
 /dev/keymap.json
+
+# Per-cabinet timings config - lives in Nextcloud on the real machine; only
+# config.example.json is tracked. This copy is for local convenience.
+/config.json
 .idea

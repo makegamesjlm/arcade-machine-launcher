@@ -216,7 +216,7 @@ func _refresh_volume_readout() -> void:
 func _send_pause() -> void:
 	_close_overlay_ui()
 	_resume_for_playing()
-	await get_tree().create_timer(Cfg.SEND_PAUSE_DELAY_SECONDS).timeout
+	await get_tree().create_timer(Cfg.send_pause_delay_seconds).timeout
 	Bus.inject("white")
 
 

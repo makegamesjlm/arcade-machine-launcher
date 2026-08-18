@@ -57,9 +57,6 @@ const BACKGROUND_MAX_FPS := 5
 const SIMULATED_PREPARE_SECONDS := 0.45
 const SIMULATED_CRASH_SECONDS := 1.0
 
-## Grace period between SIGTERM and SIGKILL when closing a game outright.
-const CLOSE_GRACE_SECONDS := 2.0
-
 var is_busy: bool:
 	get: return _current != null
 
@@ -124,7 +121,7 @@ func launch(game: GameEntry, simulated_outcome: int = SimulatedOutcome.SUCCESS) 
 	if not game.keymap.is_empty():
 		# The service polls for changes; give it the documented window so the
 		# game's first frame already sees the right buttons.
-		await get_tree().create_timer(Cfg.KEYMAP_RELOAD_SECONDS).timeout
+		await get_tree().create_timer(Cfg.keymap_reload_seconds).timeout
 		if _current != game:
 			return  # cancelled while we were waiting
 
@@ -298,7 +295,7 @@ func _terminate_current() -> void:
 	OS.execute("kill", ["-TERM", str(pid)])
 
 	var elapsed := 0.0
-	while elapsed < CLOSE_GRACE_SECONDS and OS.is_process_running(pid):
+	while elapsed < Cfg.close_grace_seconds and OS.is_process_running(pid):
 		await get_tree().create_timer(0.1).timeout
 		elapsed += 0.1
 	if OS.is_process_running(pid):
