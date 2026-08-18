@@ -1,9 +1,8 @@
 extends Control
-## The launcher screen: scans /games, draws the grid, and hands a chosen game
-## to GameLauncher.
+## The launcher screen: scans /games, draws a centered row of games that scrolls
+## sideways, and hands a chosen game to GameLauncher.
 
 const CARD_SCENE := preload("res://scenes/game_card.tscn")
-const COLUMNS := 4
 const BUILD_NUMBER_PATH := "res://BUILD_NUMBER"
 
 ## Held-direction auto-repeat. The first step fires immediately, then after a
@@ -12,7 +11,11 @@ const BUILD_NUMBER_PATH := "res://BUILD_NUMBER"
 const REPEAT_DELAY_SECONDS := 0.38
 const REPEAT_INTERVAL_SECONDS := 0.11
 
-const NAV_ACTIONS := ["nav_left", "nav_right", "nav_up", "nav_down"]
+## How long the row takes to slide the newly selected game to the middle.
+const CAROUSEL_SLIDE_SECONDS := 0.18
+
+## A single row now, so only left/right walk it; up/down are inert.
+const NAV_ACTIONS := ["nav_left", "nav_right"]
 
 ## Buttons are often still held when a game quits back to us. Swallow input
 ## briefly so the release does not immediately relaunch something.
@@ -44,6 +47,14 @@ var _input_locked := false
 var _overlay_tween: Tween
 var _volume: VolumeControl
 var _volume_tween: Tween
+## Slides the row so the selected game sits centered; killed and restarted on
+## each move. See _center_selected.
+var _row_tween: Tween
+## Half-viewport-wide fillers on each end of the row, so the first and last
+## games can still slide to the middle. Rebuilt with the cards; widths tracked
+## on resize. See _make_spacer / _update_spacers.
+var _lead_spacer: Control
+var _trail_spacer: Control
 var _simulated_outcome := GameLauncher.SimulatedOutcome.SUCCESS
 ## Id of the game whose card is marked RUNNING, or "" if none. Kept separately
 ## from GameLauncher's own state so a rebuild (_rebuild_cards()) can put the
@@ -52,7 +63,7 @@ var _running_game_id := ""
 
 @onready var _background: ColorRect = %Background
 @onready var _layout: MarginContainer = %Layout
-@onready var _grid: GridContainer = %Grid
+@onready var _row: HBoxContainer = %Row
 @onready var _shelf: ScrollContainer = %Shelf
 @onready var _game_count: Label = %GameCount
 @onready var _build_number: Label = %BuildNumber
@@ -96,7 +107,9 @@ func _ready() -> void:
 	# window whenever this is not actively being used for that.
 	get_window().transparent_bg = true
 
-	_grid.columns = COLUMNS
+	# Keep the row centered as its own size (spacers) or the shelf's changes.
+	_shelf.resized.connect(_on_shelf_resized)
+	_row.sort_children.connect(_on_row_sorted)
 	_build_number.text = "BUILD %s" % _read_build_number()
 
 	_launcher = GameLauncher.new()
@@ -164,27 +177,67 @@ func _rebuild_cards() -> void:
 	# it rather than throwing them back to the first tile.
 	var previous_id := _cards[_selected].game.id if _selected >= 0 else ""
 
-	for card in _cards:
-		_grid.remove_child(card)
-		card.queue_free()
+	for child in _row.get_children():
+		_row.remove_child(child)
+		child.queue_free()
 	_cards.clear()
+	_lead_spacer = null
+	_trail_spacer = null
 	_selected = -1
 
+	if _games.is_empty():
+		return
+
+	_lead_spacer = _make_spacer()
+	_row.add_child(_lead_spacer)
 	for game in _games:
 		var card: GameCard = CARD_SCENE.instantiate()
-		_grid.add_child(card)
+		card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		_row.add_child(card)
 		card.setup(game)
 		card.set_status(STATUS_RUNNING if game.id == _running_game_id else "")
 		_cards.append(card)
+	_trail_spacer = _make_spacer()
+	_row.add_child(_trail_spacer)
+	_update_spacers()
 
-	if _cards.is_empty():
-		return
 	var restored := 0
 	for i in _cards.size():
 		if _cards[i].game.id == previous_id:
 			restored = i
 			break
 	_select(restored)
+
+
+## An empty filler control the row uses at each end. Its width is set in
+## _update_spacers; it fills vertically so it does not disturb card centering.
+func _make_spacer() -> Control:
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_FILL
+	return spacer
+
+
+## Sizes the end spacers to half the shelf width each, so the first and last
+## games can slide all the way to the middle like any other - the row is a
+## centered carousel, not a left-aligned list.
+func _update_spacers() -> void:
+	if _lead_spacer == null:
+		return
+	var half := _shelf.size.x * 0.5
+	_lead_spacer.custom_minimum_size.x = half
+	_trail_spacer.custom_minimum_size.x = half
+
+
+func _on_shelf_resized() -> void:
+	_update_spacers()
+	_center_selected(false)
+
+
+## Fires after the row (re)lays out its children - a rebuild, or a spacer width
+## change. Positions are only real once this has run, so snap the selected game
+## to center here rather than animating from stale coordinates.
+func _on_row_sorted() -> void:
+	_center_selected(false)
 
 
 # --- SessionController's public surface on this scene --------------------------
@@ -284,13 +337,33 @@ func _select(index: int) -> void:
 		_cards[_selected].set_selected(false)
 
 	_selected = index
-	var card := _cards[_selected]
-	card.set_selected(true)
-	# The card has not been laid out yet on the first frame, so let the
-	# container settle before asking the shelf to scroll to it.
-	_shelf.ensure_control_visible.call_deferred(card)
+	_cards[_selected].set_selected(true)
+	_center_selected()
 
 	update_detail()
+
+
+## Slides the row so the selected game is centered in the shelf. Never clamps
+## short of the ends: the half-viewport spacers (see _update_spacers) give every
+## game, first and last included, the room to reach the middle. Snaps instead of
+## sliding when `animate` is false - used right after a (re)layout, when there is
+## no previous position worth animating from.
+func _center_selected(animate := true) -> void:
+	# Bail until both the shelf and the row have real sizes; _on_shelf_resized
+	# and _on_row_sorted call back in once they do.
+	if _selected < 0 or _shelf.size.x <= 0.0 or _row.size.x <= 0.0:
+		return
+	var card := _cards[_selected]
+	var target := int(card.position.x + card.size.x * 0.5 - _shelf.size.x * 0.5)
+	target = clampi(target, 0, maxi(0, int(_row.size.x - _shelf.size.x)))
+
+	if _row_tween != null and _row_tween.is_running():
+		_row_tween.kill()
+	if not animate:
+		_shelf.scroll_horizontal = target
+		return
+	_row_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	_row_tween.tween_property(_shelf, "scroll_horizontal", target, CAROUSEL_SLIDE_SECONDS)
 
 
 ## Fills the panel under the grid from the selected card. Public because it is
@@ -310,10 +383,7 @@ func update_detail() -> void:
 		else "No description in game.json.")
 
 
-## Grid movement. Left/right walk the flat list and wrap at the ends; up/down
-## move a row and wrap between top and bottom. The last row is often short, so
-## moving down into it lands on the last game rather than refusing to move.
-@warning_ignore("integer_division")
+## Row movement: left/right walk the games and wrap at the ends.
 func _move(action: String) -> void:
 	if _cards.size() < 2:
 		return
@@ -325,17 +395,6 @@ func _move(action: String) -> void:
 			index = posmod(index - 1, count)
 		"nav_right":
 			index = posmod(index + 1, count)
-		"nav_up":
-			if index >= COLUMNS:
-				index -= COLUMNS
-			else:
-				# Wrap to the lowest row that actually has this column.
-				index = (count - 1) - posmod(count - 1 - index, COLUMNS)
-		"nav_down":
-			if index / COLUMNS < (count - 1) / COLUMNS:
-				index = mini(index + COLUMNS, count - 1)
-			else:
-				index = index % COLUMNS
 
 	_select(index)
 

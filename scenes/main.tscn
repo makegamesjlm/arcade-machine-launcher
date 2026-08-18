@@ -105,19 +105,14 @@ vertical_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-horizontal_scroll_mode = 0
+horizontal_scroll_mode = 3
+vertical_scroll_mode = 0
 
-[node name="Center" type="CenterContainer" parent="Layout/Column/Shelf"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Grid" type="GridContainer" parent="Layout/Column/Shelf/Center"]
+[node name="Row" type="HBoxContainer" parent="Layout/Column/Shelf"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/h_separation = 30
-theme_override_constants/v_separation = 30
-columns = 4
+size_flags_vertical = 3
+theme_override_constants/separation = 30
 
 [node name="EmptyState" type="CenterContainer" parent="Layout/Column"]
 unique_name_in_owner = true
