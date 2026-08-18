@@ -67,6 +67,16 @@ static func _load_game(dir_path: String, id: String, errors: PackedStringArray) 
 		return null
 
 	var manifest: Dictionary = json.data
+
+	# A game may opt out of the launcher entirely with "hide": true - a work in
+	# progress, a seasonal title parked for later, a helper binary that ships in
+	# the games folder but is not meant to be picked. It is deliberately absent,
+	# not broken, so it is skipped silently: no entry, and no error or warning
+	# either (returning null without touching `errors`). Only a real boolean
+	# true hides; a stray string or number is ignored rather than trusted.
+	if manifest.get("hide", false) == true:
+		return null
+
 	var game := GameEntry.new()
 	game.id = id
 	game.dir_path = dir_path

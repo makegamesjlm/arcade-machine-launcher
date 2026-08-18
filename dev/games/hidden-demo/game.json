@@ -1,0 +1,7 @@
+{
+  "name": "Hidden Demo",
+  "description": "Fixture: fully launchable, but hidden from the launcher via \"hide\": true.",
+  "executable": "game.x86_64",
+  "players": 1,
+  "hide": true
+}

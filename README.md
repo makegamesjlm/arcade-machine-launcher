@@ -41,8 +41,16 @@ the cabinet). The location is the launcher's default; override it with
 | `executable` | **yes** | Relative to the game folder, or an absolute path |
 | `players` | no | Defaults to `1` |
 | `args` | no | Array of extra arguments for the executable |
+| `hide` | no | `true` keeps the game out of the launcher entirely (see below) |
 
 The game runs with its own folder as the working directory.
+
+Set `"hide": true` to keep a folder in the games directory but out of the
+launcher — a work in progress, a title parked for later, or a helper binary
+that ships alongside the games but should not be picked. A hidden game is
+skipped silently: it does not appear in the row and is not listed as a problem.
+It must still be a valid, launchable folder; `hide` is not a way to park a
+broken one.
 
 ### keymap.json
 

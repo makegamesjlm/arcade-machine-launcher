@@ -34,6 +34,9 @@ game runs with this folder as its working directory.
   launcher. Use an array of names, or a single name as a plain string. Omit it
   and no credit line is shown.
 - Optional `args` may contain an array of command-line arguments.
+- Optional `hide`: set to `true` to keep the folder out of the launcher
+  entirely (a work in progress, or a title parked for later). The folder must
+  still be valid and launchable; it is just skipped silently.
 
 ## `icon.png`
 

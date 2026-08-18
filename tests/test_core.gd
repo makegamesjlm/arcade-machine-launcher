@@ -43,6 +43,13 @@ func _test_scanner(fixtures: String) -> void:
 	for broken in ["broken-manifest", "missing-exe"]:
 		_check(not ids.has(broken), "%s is not launchable, got %s" % [broken, ids])
 
+	# hidden-demo is fully launchable but carries "hide": true, so it is skipped
+	# silently - absent from the list, and not counted as an error either.
+	_check(not ids.has("hidden-demo"),
+		"a game with \"hide\": true is excluded, got %s" % [ids])
+	_check(not _any_contains(result.errors, "hidden-demo"),
+		"a hidden game is skipped silently, not reported as an error, got %s" % [result.errors])
+
 	var sorted_names := names.duplicate()
 	sorted_names.sort_custom(func(a: String, b: String) -> bool:
 		return a.naturalnocasecmp_to(b) < 0)
