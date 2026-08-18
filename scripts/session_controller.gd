@@ -16,8 +16,9 @@ extends Node
 ##   ATTRACT   - the idle video, with or without a game held behind it
 ##
 ## Invariant: the control channel's gate is BLOCKED exactly when a game
-## exists and is frozen - OVERLAY, HELD_MENU, and ATTRACT-with-a-game. It is
-## PASS in MENU, PLAYING, and ATTRACT-with-no-game. Freezing a game and
+## exists and is frozen - HELD_MENU, OVERLAY-with-a-game, and
+## ATTRACT-with-a-game. It is PASS in MENU, PLAYING, OVERLAY-over-the-menu,
+## and ATTRACT-with-no-game. Freezing a game and
 ## marking it "held" (GameLauncher.hold()) always happen together here, for
 ## exactly the same reason: is_held is what this whole invariant and the
 ## one-held-game-ever rule both key off.
@@ -323,9 +324,16 @@ func _set_state(state: int) -> void:
 
 func _gate_is_blocked() -> bool:
 	match _state:
-		State.OVERLAY, State.HELD_MENU:
+		State.HELD_MENU:
+			# A game is held by definition here, so the gate is always blocked.
 			return true
-		State.ATTRACT:
+		State.OVERLAY, State.ATTRACT:
+			# Blocked only when a game is actually frozen behind them. Opened
+			# over the plain menu (no held game) the gate stays PASS - see
+			# _open_overlay, which blocks it only from PLAYING - so the router
+			# must stay off, or every nav action fires twice: once for real,
+			# once synthesized from the feed. In the overlay's short wrapping
+			# rows that double-step reads as a move in the opposite direction.
 			return _launcher.is_held
 		_:
 			return false
