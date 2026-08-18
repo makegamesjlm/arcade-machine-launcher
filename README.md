@@ -155,16 +155,19 @@ merely held rather than actually finished — see below.)
 
 White is a system button, not a game button: shanwan-remap never writes it to
 the virtual pad, so a game never sees it on its own, no matter what any
-keymap says. Pressing it always opens a two-row overlay over whatever was on
-screen (the game keeps running, but freezes for the duration — see below):
+keymap says. A quick **tap** opens a two-row overlay over whatever was on
+screen (the game keeps running, but freezes for the duration — see below);
+**holding it** for `hard_reset_seconds` (5s by default) is a hard reset — see
+[Hard reset](#hard-reset). The tap acts on release, so a reset-hold never
+flashes the overlay open first.
 
 Row 1 (varies by context):
 
 | Context | Items |
 | --- | --- |
 | A game is running | Continue · Send pause · Back to launcher · Close game · Sleep |
-| Menu, nothing held | Continue · Refresh · Sleep |
-| Menu, a game held | Continue · Close game · Refresh · Sleep |
+| Menu, nothing held | Continue · Sleep |
+| Menu, a game held | Continue · Close game · Sleep |
 
 Row 2 is always **Mute · Volume down · Volume up**, and acts immediately
 without closing the overlay.
@@ -179,8 +182,21 @@ without closing the overlay.
 - **Sleep** enters attract mode immediately.
 - The bottom-middle button and a second white press both mean Continue.
 
+There is no Refresh item: the hard reset restarts the launcher, which re-scans
+the games folder, so it doubles as the manual "rescan" action.
+
 Navigation is by joystick; the bottom-right button confirms, exactly like the
 main grid.
+
+## Hard reset
+
+Holding the white button for `hard_reset_seconds` (5s by default), in the
+launcher or mid-game, quits the launcher. On the cabinet it runs as a systemd
+user service with `Restart=always` and `KillMode=control-group`, so quitting
+restarts it from a clean slate and takes any running game — a child in the same
+control group — down with it: a full reset from one held button, no matter what
+state the cabinet got itself into. It also re-scans the games folder on the way
+back up, which is why there is no separate Refresh.
 
 ## Held games
 
@@ -209,6 +225,7 @@ on those. Copy [`config.example.json`](config.example.json) to get started.
 | `close_grace_seconds` | 2.0 | Grace between `SIGTERM` and `SIGKILL` when closing a game |
 | `send_pause_delay_seconds` | 0.25 | Delay after resuming a game before "Send pause" injects the white press |
 | `failed_message_seconds` | 15 | How long a "could not start" message waits before returning to the grid |
+| `hard_reset_seconds` | 5 | How long the white button must be held to hard-reset (close any game + restart the launcher) |
 
 Each value must be a positive number. Anything missing, mistyped, or out of
 range falls back to its default and is shown as a `config:` problem on the grid

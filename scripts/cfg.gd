@@ -159,6 +159,14 @@ var send_pause_delay_seconds := DEFAULT_SEND_PAUSE_DELAY_SECONDS
 const DEFAULT_FAILED_MESSAGE_SECONDS := 15.0
 var failed_message_seconds := DEFAULT_FAILED_MESSAGE_SECONDS
 
+## How long the white button must be held for a hard reset: closing any open
+## game and quitting the launcher, which systemd restarts from a clean slate
+## (see SessionController._hard_reset). Long enough not to fire on an ordinary
+## press, short enough to be a deliberate "get me out of here" for an attendant.
+## Also the manual "rescan games" path, since a fresh start re-scans.
+const DEFAULT_HARD_RESET_SECONDS := 5.0
+var hard_reset_seconds := DEFAULT_HARD_RESET_SECONDS
+
 ## The keys config.json may contain, each pointing at its default. Drives both
 ## the unknown-key check and the per-key fallback in _load_config().
 const TIMING_DEFAULTS := {
@@ -169,6 +177,7 @@ const TIMING_DEFAULTS := {
 	"close_grace_seconds": DEFAULT_CLOSE_GRACE_SECONDS,
 	"send_pause_delay_seconds": DEFAULT_SEND_PAUSE_DELAY_SECONDS,
 	"failed_message_seconds": DEFAULT_FAILED_MESSAGE_SECONDS,
+	"hard_reset_seconds": DEFAULT_HARD_RESET_SECONDS,
 }
 
 var games_dir: String = DEFAULT_GAMES_DIR
@@ -251,6 +260,7 @@ func _load_config() -> void:
 	close_grace_seconds = DEFAULT_CLOSE_GRACE_SECONDS
 	send_pause_delay_seconds = DEFAULT_SEND_PAUSE_DELAY_SECONDS
 	failed_message_seconds = DEFAULT_FAILED_MESSAGE_SECONDS
+	hard_reset_seconds = DEFAULT_HARD_RESET_SECONDS
 
 	if not FileAccess.file_exists(config_path):
 		return
@@ -272,6 +282,7 @@ func _load_config() -> void:
 	close_grace_seconds = _read_seconds(parsed, "close_grace_seconds")
 	send_pause_delay_seconds = _read_seconds(parsed, "send_pause_delay_seconds")
 	failed_message_seconds = _read_seconds(parsed, "failed_message_seconds")
+	hard_reset_seconds = _read_seconds(parsed, "hard_reset_seconds")
 
 	# The values still load, but flag an inversion: idle-kill firing before an
 	# attract timeout, or the menu timeout outlasting the in-game one, is almost

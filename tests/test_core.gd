@@ -326,8 +326,8 @@ func _test_system_overlay_navigation() -> void:
 			% [overlay._row, overlay._col])
 
 	overlay.open(SystemOverlay.Context.MENU_IDLE)
-	_check(overlay._rows[0].size() == 3,
-		"MENU_IDLE context has 3 row-1 items, got %d" % overlay._rows[0].size())
+	_check(overlay._rows[0].size() == 2,
+		"MENU_IDLE context has 2 row-1 items (Continue, Sleep), got %d" % overlay._rows[0].size())
 	_check(overlay._row == 0 and overlay._col == 0, "reopening refocuses row 0, col 0")
 
 	var activated := []

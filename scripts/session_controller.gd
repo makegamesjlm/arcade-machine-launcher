@@ -44,6 +44,15 @@ var _main: Control
 var _volume: VolumeControl
 var _router: InputRouter
 
+## True between a white press and its release. Set false when the hold reaches
+## the hard-reset threshold, so the release it eventually gets is a no-op rather
+## than also firing the tap action. See _handle_white.
+var _white_held := false
+## One-shot, started on every white press and stopped on release. If it ever
+## fires, white was held long enough (Cfg.hard_reset_seconds) to mean a hard
+## reset rather than a tap.
+var _hard_reset_timer: Timer
+
 @onready var _overlay_ui: SystemOverlay = %SystemOverlay
 @onready var _attract_ui: AttractScreen = %AttractScreen
 
@@ -51,6 +60,11 @@ var _router: InputRouter
 func _ready() -> void:
 	_router = InputRouter.new()
 	add_child(_router)
+
+	_hard_reset_timer = Timer.new()
+	_hard_reset_timer.one_shot = true
+	_hard_reset_timer.timeout.connect(_on_hard_reset_due)
+	add_child(_hard_reset_timer)
 
 	Bus.button.connect(_on_bus_button)
 	Idle.attract_due.connect(_on_attract_due)
@@ -121,21 +135,60 @@ func _resume_held_game() -> void:
 
 # --- the white button --------------------------------------------------------
 
-## Any button wakes attract mode - "PRESS ANY BUTTON TO BEGIN" - but only
-## white opens or continues the system overlay everywhere else.
+## White is the system button (long-press aside, see _handle_white); every other
+## button only matters here for waking attract mode - "PRESS ANY BUTTON TO
+## BEGIN". Both arrive on the control-channel feed whether or not a game has the
+## controller, so this works in the launcher and in a game alike.
 func _on_bus_button(_pad: int, pos: String, _xbox_name, pressed: bool) -> void:
-	if not pressed:
+	if pos == "white":
+		_handle_white(pressed)
 		return
+	if pressed and _state == State.ATTRACT:
+		_on_attract_woken()
+
+
+## A quick white tap does the state-dependent thing (open/continue the overlay,
+## or wake attract); holding it for Cfg.hard_reset_seconds is a hard reset. So
+## the tap fires on *release*, and only if the hold never reached the reset
+## threshold - otherwise every reset-hold would flash the overlay open first,
+## and, from PLAYING, needlessly freeze the game a moment before killing it.
+func _handle_white(pressed: bool) -> void:
+	if pressed:
+		_white_held = true
+		_hard_reset_timer.start(Cfg.hard_reset_seconds)
+	elif _white_held:
+		_white_held = false
+		_hard_reset_timer.stop()
+		_on_white_tap()
+
+
+func _on_white_tap() -> void:
 	if _state == State.ATTRACT:
 		_on_attract_woken()
-		return
-	if pos != "white":
 		return
 	match _state:
 		State.PLAYING, State.MENU, State.HELD_MENU:
 			_open_overlay(_state)
 		State.OVERLAY:
 			_continue_overlay()
+
+
+func _on_hard_reset_due() -> void:
+	_white_held = false  # so the release still to come is a no-op, not a tap
+	_hard_reset()
+
+
+## Quits the launcher. On the cabinet it runs as a systemd user service with
+## Restart=always and KillMode=control-group (see systemd/arcade-launcher.service),
+## so quitting restarts it from a clean slate and takes any running game - a
+## child in the same cgroup - down with it: a full hard reset from one held
+## button, in the launcher or mid-game. It doubles as the manual "rescan games"
+## action, since the fresh start re-scans. Off the cabinet (dev) there is no
+## systemd to bring it back; it simply exits.
+func _hard_reset() -> void:
+	print("[session] hard reset: white held %ss - quitting for a clean restart"
+		% Cfg.hard_reset_seconds)
+	get_tree().quit()
 
 
 # --- the system overlay -------------------------------------------------------
@@ -190,8 +243,6 @@ func _on_overlay_item(item: int) -> void:
 			_back_to_launcher()
 		SystemOverlay.Item.CLOSE_GAME:
 			_close_game()
-		SystemOverlay.Item.REFRESH:
-			_main.refresh()
 		SystemOverlay.Item.SLEEP:
 			_enter_attract()
 		SystemOverlay.Item.MUTE:

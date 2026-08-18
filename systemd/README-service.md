@@ -67,8 +67,9 @@ test -f ~/Nextcloud/Games/neon-drift/game.json
 test -x ~/Nextcloud/Games/neon-drift/game.x86_64
 ```
 
-Open the system overlay (white button) and pick **Refresh** to rescan the games
-folder; the launcher service does not need to be restarted. Launch the game
+Hold the white button for a hard reset (~5s) to restart the launcher, which
+re-scans the games folder on the way back up; the service itself does not need
+to be restarted by hand. Launch the game
 through the arcade launcher for the smoke test, then verify that it reaches
 its menu, accepts both cabinet controllers as appropriate, fills the display,
 shows no mouse cursor at any point, and exits cleanly back to the launcher.

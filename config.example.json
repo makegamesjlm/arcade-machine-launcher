@@ -5,5 +5,6 @@
   "keymap_reload_seconds": 2.2,
   "close_grace_seconds": 2.0,
   "send_pause_delay_seconds": 0.25,
-  "failed_message_seconds": 15
+  "failed_message_seconds": 15,
+  "hard_reset_seconds": 5
 }

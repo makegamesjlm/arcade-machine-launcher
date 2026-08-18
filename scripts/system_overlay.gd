@@ -15,7 +15,7 @@ extends CanvasLayer
 signal item_activated(item: Item)
 
 enum Item {
-	CONTINUE, SEND_PAUSE, BACK_TO_LAUNCHER, CLOSE_GAME, REFRESH, SLEEP,
+	CONTINUE, SEND_PAUSE, BACK_TO_LAUNCHER, CLOSE_GAME, SLEEP,
 	MUTE, VOLUME_DOWN, VOLUME_UP,
 }
 
@@ -26,8 +26,8 @@ enum Context { PLAYING, MENU_IDLE, MENU_HELD }
 
 const ROW1_BY_CONTEXT := {
 	Context.PLAYING: [Item.CONTINUE, Item.SEND_PAUSE, Item.BACK_TO_LAUNCHER, Item.CLOSE_GAME, Item.SLEEP],
-	Context.MENU_IDLE: [Item.CONTINUE, Item.REFRESH, Item.SLEEP],
-	Context.MENU_HELD: [Item.CONTINUE, Item.CLOSE_GAME, Item.REFRESH, Item.SLEEP],
+	Context.MENU_IDLE: [Item.CONTINUE, Item.SLEEP],
+	Context.MENU_HELD: [Item.CONTINUE, Item.CLOSE_GAME, Item.SLEEP],
 }
 const ROW2 := [Item.MUTE, Item.VOLUME_DOWN, Item.VOLUME_UP]
 
@@ -36,7 +36,6 @@ const LABELS := {
 	Item.SEND_PAUSE: "Send Pause",
 	Item.BACK_TO_LAUNCHER: "Back to Launcher",
 	Item.CLOSE_GAME: "Close Game",
-	Item.REFRESH: "Refresh",
 	Item.SLEEP: "Sleep",
 	Item.MUTE: "Mute",
 	Item.VOLUME_DOWN: "Volume −",
