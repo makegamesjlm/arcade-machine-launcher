@@ -137,9 +137,12 @@ func refresh() -> void:
 	_scan_problems = PackedStringArray()
 	# The launcher's own mapping is reapplied on every refresh, so a cabinet
 	# whose keymap drifted (a crashed game, a hand-edited file) heals itself -
-	# except while a game is held: its keymap has to stay installed, not the
-	# launcher's own, or resuming it would hand back the wrong buttons.
-	if not _launcher.is_held:
+	# except while any game exists: its keymap has to stay installed, not the
+	# launcher's own, or resuming/starting it would hand back the wrong buttons.
+	# is_held is not enough: closing a held game to launch a different one fires
+	# finished(), whose delayed refresh would otherwise land mid-launch of the
+	# new game and clobber the keymap that launch() just installed for it.
+	if not _launcher.is_busy:
 		var keymap_error := _launcher.apply_launcher_keymap()
 		if not keymap_error.is_empty():
 			_scan_problems.append("controller mapping: " + keymap_error)
