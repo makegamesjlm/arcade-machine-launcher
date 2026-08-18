@@ -226,14 +226,20 @@ func _make_spacer() -> Control:
 	return spacer
 
 
-## Width one card is given so exactly VISIBLE_COUNT of them, plus the gaps
-## between, fill the shelf. Derived from the live shelf width so the row adapts
-## to a resize. Zero until the shelf has a real size (the first frame).
+## Width one card is given so VISIBLE_COUNT of them, plus the gaps between and a
+## one-gap inset at each shelf edge, fill the shelf. That edge inset (applied as
+## the end spacers in _update_spacers) keeps the outermost card - and the glow
+## and scale it gains when highlighted - clear of the shelf's clip edge. Making
+## it equal to the gap between cards means a card scrolled just off-screen lands
+## exactly at the edge, so no sliver of it peeks in. Derived from the live shelf
+## width so the row adapts to a resize; zero until the shelf has a real size.
 func _card_width() -> float:
 	if _shelf.size.x <= 0.0:
 		return 0.0
 	var sep: int = _row.get_theme_constant("separation")
-	return maxf(0.0, (_shelf.size.x - (VISIBLE_COUNT - 1) * sep) / float(VISIBLE_COUNT))
+	# (VISIBLE_COUNT - 1) gaps between cards, plus one gap of inset on each edge.
+	var usable := _shelf.size.x - (VISIBLE_COUNT + 1) * sep
+	return maxf(0.0, usable / float(VISIBLE_COUNT))
 
 
 ## Sizes every card so VISIBLE_COUNT of them fill the shelf exactly - the row is
