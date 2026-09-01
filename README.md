@@ -319,15 +319,36 @@ alongside scan and config trouble.
 ## Cursor hiding
 
 There is no mouse during arcade play, but one may still get plugged in for
-maintenance, so this is scoped to the launcher and games only, not the whole
-desktop session. `setup-arcade.sh` installs a fully transparent Xcursor
-theme (`arcade-blank`) for the arcade user; only `XCURSOR_THEME=arcade-blank`
-in the launcher's own environment (and every game's, inherited through it)
-points at it. A file manager or terminal opened from the normal desktop
-session never sees that variable and keeps the system's normal cursor. See
-`setup-arcade.sh`'s "cursor hiding" section for why this was chosen over
-routing games through a nested compositor such as Gamescope (tried once,
-reverted; see git history).
+maintenance, so none of this blinds the desktop session permanently. It takes
+two settings, because a cursor on screen can come from two different places.
+
+**Cursors a client draws.** `setup-arcade.sh` installs a fully transparent
+Xcursor theme (`arcade-blank`) for the arcade user; only
+`XCURSOR_THEME=arcade-blank` in the launcher's own environment (and every
+game's, inherited through it) points at it. A file manager or terminal opened
+from the normal desktop session never sees that variable and keeps the
+system's normal cursor. See `setup-arcade.sh`'s "cursor hiding" section for
+why this was chosen over routing games through a nested compositor such as
+Gamescope (tried once, reverted; see git history).
+
+**The cursor KWin draws itself.** The theme above cannot touch this one, and on
+Wayland the compositor owns the pointer until a surface claims it — so from the
+moment a game's window is mapped until the game gets far enough into its own
+startup to set a cursor for it, KWin renders its default arrow. That gap is the
+arrow that used to flash on screen on every launch. No client-side setting can
+reach it: not the theme, and not Godot's `MOUSE_MODE_HIDDEN` in
+`scripts/main.gd`, which only ever applied to the launcher's own window.
+
+KWin's built-in **Hide Cursor** effect (Plasma 6.2+) is the one thing that can.
+`setup-arcade.sh` enables it and sets a five second inactivity timeout, so the
+compositor stops rendering a pointer at all after five seconds with no real
+pointer input — on a cabinet with no mouse, that means a few seconds after
+login and then forever, covering the mapping gap that nothing else could. It
+does not blind maintenance the way the session-wide cursor theme an earlier
+version of the script set did: the cursor returns the instant a plugged-in
+mouse moves, and only fades again after the same few seconds of it sitting
+still. Cabinet buttons cannot bring it back — keyboard input in that effect
+only ever hides the cursor, never shows it.
 
 ## Window activation
 
@@ -478,7 +499,7 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
 | `scripts/main.gd` | Grid, navigation, the launch takeover and the running tile's mark, volume HUD |
 | `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
-| `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor theme |
+| `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor hiding, KWin settings |
 | `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |
 | `scripts/install-git-hooks.sh`, `.ps1` | Enables the build-number pre-commit hook |
 | `systemd/` | User unit and install notes |
