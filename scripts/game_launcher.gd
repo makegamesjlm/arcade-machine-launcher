@@ -35,6 +35,13 @@ signal failed(game: GameEntry, reason: String)
 ## OOM killer took it, not a deliberate close_held(). Survivable: state is
 ## already cleared by the time this fires, same as finished/failed.
 signal held_game_vanished(game: GameEntry)
+## The current game has just been frozen and parked in the background (hold()),
+## or thawed again (resume_held()). Emitted only on a real change of state, so
+## the two always alternate: Analytics measures the stretch between them to tell
+## time spent playing apart from time spent parked behind the system overlay or
+## the attract loop. Nothing about the freeze itself depends on these.
+signal held(game: GameEntry)
+signal resumed(game: GameEntry)
 
 ## Outcomes available to the interactive development simulator. Ignored unless
 ## Cfg.simulate_launch was enabled explicitly on the command line.
@@ -252,7 +259,13 @@ func hold() -> void:
 	if _current == null:
 		return
 	freeze()
+	# The re-freeze above stays unconditional (SIGSTOP on a stopped process is a
+	# no-op), but the signal must not repeat, or the frozen stretches it marks
+	# would nest rather than alternate.
+	var was_held := _held
 	_held = true
+	if not was_held:
+		held.emit(_current)
 
 
 ## Un-freezes the held game. Does not touch window mode or FPS - the caller
@@ -263,6 +276,7 @@ func resume_held() -> void:
 		return
 	_held = false
 	thaw()
+	resumed.emit(_current)
 
 
 ## Shuts the current game down completely, whether it is running or held

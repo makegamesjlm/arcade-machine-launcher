@@ -20,6 +20,8 @@ func _ready() -> void:
 	_test_xbox_to_joy_button_table()
 	_test_idle_thresholds()
 	_test_config_loading()
+	_test_analytics_events()
+	_test_analytics_summary()
 	_test_system_overlay_navigation()
 
 	print("\n%d checks, %d failed" % [_checks, _failures])
@@ -305,6 +307,234 @@ func _write(path: String, text: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string(text)
 	file.close()
+
+
+func _test_analytics_events() -> void:
+	print("\n-- analytics events")
+	var dir := OS.get_cache_dir().path_join("arcade-launcher-test/analytics")
+	var saved_dir := Cfg.analytics_dir
+	_clear_dir(dir)
+	Cfg.analytics_dir = dir
+
+	var game := GameEntry.new()
+	game.id = "neon-drift"
+	game.name = "Neon Drift"
+
+	# A plain successful play, start to finish.
+	Analytics._on_preparing(game)
+	Analytics._on_started(game)
+	Analytics._on_finished(game, 0)
+
+	var events := _read_events(dir)
+	_check(events.size() == 2, "one session writes an open and a close, got %d" % events.size())
+	_check(events[0].get("event") == "game_open" and events[0].get("game") == "neon-drift",
+		"the open line names the game, got %s" % [events[0]])
+	for key in ["time", "uptime_ms", "boot"]:
+		_check(events[0].has(key), "every line carries \"%s\", got %s" % [key, events[0]])
+	_check(events[1].get("event") == "game_close" and events[1].get("name") == "Neon Drift",
+		"the close line stands on its own, with the display name, got %s" % [events[1]])
+	_check(events[1].get("reason") == Analytics.REASON_QUIT,
+		"exiting 0 reads as the player quitting, got %s" % events[1].get("reason"))
+	_check(float(events[1].get("active_seconds", -1.0)) >= 0.0
+			and float(events[1].get("active_seconds")) <= float(events[1].get("wall_seconds", 0.0)),
+		"active time never exceeds wall time, got %s" % [events[1]])
+
+	# The endings GameLauncher's own signals imply.
+	_check(_close_event(dir, game, func() -> void:
+		Analytics._on_started(game)
+		Analytics._on_finished(game, 3)).get("reason") == Analytics.REASON_EXITED_NONZERO,
+		"a non-zero exit is told apart from a clean one")
+	_check(_close_event(dir, game, func() -> void:
+		Analytics._on_started(game)
+		Analytics._on_failed(game, "died")).get("reason") == Analytics.REASON_CRASHED_EARLY,
+		"failing after it started reads as an early crash")
+	_check(_close_event(dir, game, func() -> void:
+		Analytics._on_failed(game, "no such binary")).get("reason") == Analytics.REASON_LAUNCH_FAILED,
+		"failing before it ever started reads as a launch failure")
+
+	# A launch that never ran is still a matched pair, so every open has a close.
+	var pad_events := _read_events(dir)
+	_check(pad_events[pad_events.size() - 2].get("event") == "game_open",
+		"a game that died on the launch pad still opened first, got %s"
+			% [pad_events[pad_events.size() - 2]])
+	_check(float(pad_events[pad_events.size() - 1].get("wall_seconds", -1.0)) == 0.0,
+		"a game that never started has no playtime, got %s" % [pad_events[pad_events.size() - 1]])
+
+	# SessionController's reason wins over the derived one - the whole point of
+	# note_close_reason, since a close from the overlay also arrives as finished(0).
+	_check(_close_event(dir, game, func() -> void:
+		Analytics._on_started(game)
+		Analytics.note_close_reason(Analytics.REASON_IDLE_KILLED)
+		Analytics._on_finished(game, 0)).get("reason") == Analytics.REASON_IDLE_KILLED,
+		"a noted reason beats the one derived from the exit code")
+
+	# ...except where the signal is already certain. A held game that vanished
+	# was not closed by anybody, whatever was pending.
+	_check(_close_event(dir, game, func() -> void:
+		Analytics._on_started(game)
+		Analytics.note_close_reason(Analytics.REASON_REPLACED)
+		Analytics._on_vanished(game)).get("reason") == Analytics.REASON_VANISHED,
+		"a vanished game keeps its own reason over a pending one")
+
+	# A reason must not leak from the session it described onto the next one.
+	_check(_close_event(dir, game, func() -> void:
+		Analytics._on_started(game)
+		Analytics._on_finished(game, 0)).get("reason") == Analytics.REASON_QUIT,
+		"a consumed reason does not carry into the following session")
+
+	var paused := _close_event(dir, game, func() -> void:
+		Analytics._on_started(game)
+		Analytics._on_held(game)
+		Analytics._on_held(game)  # a repeat must not nest
+		Analytics._on_resumed(game)
+		Analytics._on_finished(game, 0))
+	_check(int(paused.get("hold_count", -1)) == 1,
+		"one freeze counts once however many times hold fires, got %s" % paused.get("hold_count"))
+
+	# The hard reset gets no exit code, so it closes the session itself rather
+	# than leaving it to teardown.
+	Analytics._on_preparing(game)
+	Analytics._on_started(game)
+	Analytics.close_open_session(Analytics.REASON_HARD_RESET)
+	var after_reset := _read_events(dir)
+	_check(after_reset[after_reset.size() - 1].get("reason") == Analytics.REASON_HARD_RESET,
+		"a hard reset closes the open session where it stands")
+	# ...and the backstop in _exit_tree() must then find nothing left to do,
+	# or every hard reset would record its session twice.
+	var count_before := after_reset.size()
+	Analytics.close_open_session(Analytics.REASON_LAUNCHER_EXIT)
+	_check(_read_events(dir).size() == count_before,
+		"closing an already-closed session writes nothing")
+
+	# The summary is rebuilt alongside the log, from the log.
+	_check(FileAccess.file_exists(dir.path_join(AnalyticsSummary.FILENAME)),
+		"closing a session refreshes summary.txt")
+	# Checked by path rather than by listing the directory: the temp file is a
+	# dot-file, and DirAccess.get_files() hides those by default.
+	_check(not FileAccess.file_exists(dir.path_join(".%s.tmp" % AnalyticsSummary.FILENAME)),
+		"the summary's atomic temp file is cleaned up")
+
+	Cfg.analytics_dir = saved_dir
+
+
+## Runs one whole session through Analytics and hands back the game_close line
+## it wrote. `body` supplies everything between the open and the close.
+func _close_event(dir: String, game: GameEntry, body: Callable) -> Dictionary:
+	Analytics._on_preparing(game)
+	body.call()
+	var events := _read_events(dir)
+	return events[events.size() - 1]
+
+
+func _read_events(dir: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var access := DirAccess.open(dir)
+	if access == null:
+		return out
+	var names := access.get_files()
+	names.sort()
+	for name in names:
+		if not name.ends_with(".jsonl"):
+			continue
+		for line in FileAccess.get_file_as_string(dir.path_join(name)).split("\n", false):
+			var parsed: Variant = JSON.parse_string(line)
+			if typeof(parsed) == TYPE_DICTIONARY:
+				out.append(parsed)
+	return out
+
+
+func _clear_dir(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	var access := DirAccess.open(dir)
+	if access == null:
+		return
+	for name in access.get_files():
+		DirAccess.remove_absolute(dir.path_join(name))
+
+
+func _test_analytics_summary() -> void:
+	print("\n-- analytics summary")
+
+	# Word Rush is played more but for shorter goes; Neon Drift is always left
+	# to time out, and failed to launch once. Ghost is a simulated dev session.
+	var sessions: Array[Dictionary] = []
+	for day in range(1, 6):
+		sessions.append(_fake_session("word-rush", "Word Rush", day, Analytics.REASON_QUIT, 100.0))
+	for day in range(1, 4):
+		sessions.append(_fake_session(
+			"neon-drift", "Neon Drift", day, Analytics.REASON_IDLE_KILLED, 200.0))
+	sessions.append(_fake_session(
+		"neon-drift", "Neon Drift", 4, Analytics.REASON_LAUNCH_FAILED, 0.0))
+	var simulated := _fake_session("ghost", "Ghost", 4, Analytics.REASON_QUIT, 10.0)
+	simulated["simulated"] = true
+	sessions.append(simulated)
+
+	var text := AnalyticsSummary.render(sessions)
+
+	_check(_has_line(text, "Plays 8"),
+		"a launch failure is not a play, and neither is a simulated session:\n%s" % text)
+	_check(_has_line(text, "Playtime 18m 20s"), "playtime totals the active seconds")
+	_check(_has_line(text, "Plays per day 1.6"), "plays per day spans the first and last day")
+	_check(not text.contains("Ghost"), "simulated sessions stay out of the summary entirely")
+
+	_check(text.find("Word Rush") < text.find("Neon Drift"),
+		"the table leads with the most-played game")
+	_check(_has_line(text, "Word Rush 5 8m 20s 1m 40s 100% 0% 0%"),
+		"the per-game row totals, medians and shares:\n%s" % text)
+	_check(_has_line(text, "Neon Drift 3 10m 00s 3m 20s 0% 0% 100%"),
+		"a game nobody finishes shows it in the timed-out column:\n%s" % text)
+
+	_check(_has_line(text, "Finished on their own 5 56%"),
+		"endings are counted over every real session, launch failures included")
+	_check(_has_line(text, "Failed to launch 1 11%"), "a launch failure appears in the endings")
+	_check(_has_line(text, "Neon Drift 1 launch failure"),
+		"a game that would not start is called out for attention:\n%s" % text)
+
+	# The window table is only worth printing once there is a longer history to
+	# contrast it against.
+	_check(not text.contains("LAST 30 DAYS"),
+		"no recent-window table until the log outruns the window")
+
+	var none: Array[Dictionary] = []
+	var empty := AnalyticsSummary.render(none)
+	_check(empty.contains("No games played yet"),
+		"an empty log renders a summary rather than failing, got:\n%s" % empty)
+
+	# No plays and nothing to report are different things.
+	var all_failed: Array[Dictionary] = [
+		_fake_session("word-rush", "Word Rush", 1, Analytics.REASON_LAUNCH_FAILED, 0.0)]
+	var broken := AnalyticsSummary.render(all_failed)
+	_check(broken.contains("No games played yet")
+			and _has_line(broken, "Word Rush 1 launch failure"),
+		"a cabinet where nothing will launch still says why:\n%s" % broken)
+
+
+func _fake_session(id: String, name: String, day: int, reason: String,
+		active: float, holds := 0) -> Dictionary:
+	return {
+		"time": "2026-09-%02dT12:00:00Z" % day,
+		"event": "game_close",
+		"game": id,
+		"name": name,
+		"reason": reason,
+		"exit_code": 0,
+		"wall_seconds": active,
+		"active_seconds": active,
+		"hold_count": holds,
+	}
+
+
+## True when some line of `text`, with its column padding collapsed, contains
+## `needle` - so these assertions are about the numbers in the table rather than
+## about the exact widths of its columns.
+func _has_line(text: String, needle: String) -> bool:
+	for line in text.split("\n"):
+		var squashed := line.strip_edges()
+		while squashed.contains("  "):
+			squashed = squashed.replace("  ", " ")
+		if squashed.contains(needle):
+			return true
+	return false
 
 
 func _test_system_overlay_navigation() -> void:

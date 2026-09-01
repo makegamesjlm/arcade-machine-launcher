@@ -95,6 +95,7 @@ func request_play(game: GameEntry, simulated_outcome: int = GameLauncher.Simulat
 		_resume_held_game()
 		return
 	if _launcher.is_held:
+		Analytics.note_close_reason(Analytics.REASON_REPLACED)
 		await _launcher.close_held()
 		Bus.set_mode(Bus.MODE_PASS)
 	_launcher.launch(game, simulated_outcome)
@@ -188,6 +189,10 @@ func _on_hard_reset_due() -> void:
 func _hard_reset() -> void:
 	print("[session] hard reset: white held %ss - quitting for a clean restart"
 		% Cfg.hard_reset_seconds)
+	# Any open game dies with us in the cgroup, so its exit is never collected
+	# and no finished/failed signal is coming. Recorded here, before the quit,
+	# rather than left to teardown - see Analytics.close_open_session().
+	Analytics.close_open_session(Analytics.REASON_HARD_RESET)
 	get_tree().quit()
 
 
@@ -306,6 +311,7 @@ func _swallow_then_unlock() -> void:
 ## + (veto-guarded) unlock - nothing further to do here for that half.
 func _close_game() -> void:
 	_close_overlay_ui()
+	Analytics.note_close_reason(Analytics.REASON_CLOSED_FROM_OVERLAY)
 	if _launcher.is_held:
 		await _launcher.close_held()
 	else:
@@ -361,6 +367,7 @@ func _on_attract_woken() -> void:
 func _on_kill_due() -> void:
 	if not _launcher.is_busy:
 		return
+	Analytics.note_close_reason(Analytics.REASON_IDLE_KILLED)
 	if _launcher.is_held:
 		await _launcher.close_held()
 	else:

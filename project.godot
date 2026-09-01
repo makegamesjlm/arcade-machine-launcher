@@ -22,6 +22,7 @@ config/icon="res://icon.svg"
 Cfg="*res://scripts/cfg.gd"
 Bus="*res://scripts/arcade_bus.gd"
 Idle="*res://scripts/idle_tracker.gd"
+Analytics="*res://scripts/analytics.gd"
 
 [gui]
 

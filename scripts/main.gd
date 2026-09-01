@@ -127,6 +127,7 @@ func _ready() -> void:
 	_launcher.started.connect(_on_started)
 	_launcher.finished.connect(_on_finished)
 	_launcher.failed.connect(_on_failed)
+	Analytics.bind(_launcher)
 
 	_volume = VolumeControl.new()
 
@@ -172,6 +173,11 @@ func refresh() -> void:
 	# the cabinet rather than only in the journal.
 	for problem in Cfg.config_problems:
 		_scan_problems.append("config: " + problem)
+	# Play data quietly not being recorded - an unwritable Nextcloud folder, a
+	# summary that will not render - is exactly the sort of thing nobody notices
+	# until they go looking for the numbers, so it shows on the same strip.
+	for problem in Analytics.problems:
+		_scan_problems.append("analytics: " + problem)
 	_scan_problems.append_array(result.errors)
 	_scan_problems.append_array(result.warnings())
 

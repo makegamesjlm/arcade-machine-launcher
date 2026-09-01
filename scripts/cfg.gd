@@ -29,6 +29,12 @@ const DEFAULT_ATTRACT_VIDEO := "~/Nextcloud/Arcade/attract.ogv"
 ## value has a sane default. See config.example.json for the documented shape.
 const DEFAULT_CONFIG_PATH := "~/Nextcloud/Arcade/config.json"
 
+## Play analytics are written into the same synced folder, so the data leaves
+## the cabinet by exactly the route games arrive on it - no server and no
+## network code in the launcher. Created on first write if it is not there.
+## See scripts/analytics.gd.
+const DEFAULT_ANALYTICS_DIR := "~/Nextcloud/Arcade/analytics"
+
 ## Physical buttons on the cabinet, in the order they are laid out:
 ##   [top_left]    [top_middle]    [top_right]
 ##   [bottom_left] [bottom_middle] [bottom_right]
@@ -184,6 +190,7 @@ var games_dir: String = DEFAULT_GAMES_DIR
 var keymap_path: String = DEFAULT_KEYMAP_PATH
 var attract_video: String = DEFAULT_ATTRACT_VIDEO
 var config_path: String = DEFAULT_CONFIG_PATH
+var analytics_dir: String = DEFAULT_ANALYTICS_DIR
 
 ## Anything wrong with config.json - a bad value that fell back to its default,
 ## an unknown key, a file that would not parse. Empty when the config is clean
@@ -203,8 +210,8 @@ func _ready() -> void:
 	_apply_environment()
 	_apply_command_line()
 	_load_config()
-	print("[cfg] games_dir=%s keymap_path=%s attract_video=%s config_path=%s simulate_launch=%s"
-		% [games_dir, keymap_path, attract_video, config_path, simulate_launch])
+	print("[cfg] games_dir=%s keymap_path=%s attract_video=%s config_path=%s analytics_dir=%s simulate_launch=%s"
+		% [games_dir, keymap_path, attract_video, config_path, analytics_dir, simulate_launch])
 
 
 func _apply_environment() -> void:
@@ -220,6 +227,9 @@ func _apply_environment() -> void:
 	var env_config := OS.get_environment("ARCADE_CONFIG_PATH")
 	if not env_config.is_empty():
 		config_path = env_config
+	var env_analytics := OS.get_environment("ARCADE_ANALYTICS_DIR")
+	if not env_analytics.is_empty():
+		analytics_dir = env_analytics
 
 
 func _apply_command_line() -> void:
@@ -234,6 +244,8 @@ func _apply_command_line() -> void:
 			attract_video = arg.trim_prefix("--attract-video=")
 		elif arg.begins_with("--config-path="):
 			config_path = arg.trim_prefix("--config-path=")
+		elif arg.begins_with("--analytics-dir="):
+			analytics_dir = arg.trim_prefix("--analytics-dir=")
 		elif arg == "--no-fullscreen":
 			fullscreen = false
 		elif arg == "--simulate-launch":
@@ -241,6 +253,7 @@ func _apply_command_line() -> void:
 	games_dir = _normalize_path(games_dir)
 	attract_video = _normalize_path(attract_video)
 	config_path = _normalize_path(config_path)
+	analytics_dir = _normalize_path(analytics_dir)
 
 
 ## Overlays the operator-tunable timings from config.json onto their defaults.

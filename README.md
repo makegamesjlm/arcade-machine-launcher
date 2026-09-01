@@ -262,6 +262,60 @@ unattended overnight. Nothing else
 happens at that mark: no display blanking, and the attract video (if already
 looping) keeps looping right through it.
 
+## Analytics
+
+Every game session is recorded into `~/Nextcloud/Arcade/analytics/` (override
+with `--analytics-dir` / `ARCADE_ANALYTICS_DIR`), beside `config.json` and the
+attract video - so the data leaves the cabinet by the same route games arrive
+on it. No server and no network code. The folder is created on first write.
+
+```
+~/Nextcloud/Arcade/analytics/
+├── 2026-09.jsonl   one JSON object per line, rotated monthly
+└── summary.txt     plain-text totals, rewritten after every session
+```
+
+`summary.txt` is the one to read: plays per game, total plays, typical session
+length, how sessions ended, and a "needs attention" block listing games that
+failed to launch or that players keep pausing out of. It is derived from the
+JSONL on every session close, so it can be deleted at any time and will be
+rebuilt from the logs.
+
+The JSONL is the detail underneath it - two lines per session:
+
+```json
+{"time":"2026-09-01T18:22:04Z","uptime_ms":19834,"boot":"a3f1c2","event":"game_open","game":"neon-drift","name":"Neon Drift"}
+{"time":"2026-09-01T18:28:56Z","uptime_ms":431201,"boot":"a3f1c2","event":"game_close","game":"neon-drift","name":"Neon Drift","reason":"quit","exit_code":0,"wall_seconds":412.3,"active_seconds":388.1,"hold_count":1}
+```
+
+`wall_seconds` is how long the game was open; `active_seconds` subtracts every
+stretch it spent frozen in the background behind the system overlay or the
+attract loop (see "Held games"), so it is the real playtime. `hold_count` is
+how many times that happened. `uptime_ms` and `boot` order events within a run
+even if the clock jumps when NTP settles after boot.
+
+`reason` is the useful field - how the session ended:
+
+| `reason` | What happened |
+| --- | --- |
+| `quit` | The game exited on its own. On a cabinet, the player chose to leave |
+| `exited_nonzero` | Exited with an error code |
+| `crashed_early` | Started, then died inside the crash window |
+| `launch_failed` | Never ran: bad keymap, or the binary would not execute |
+| `closed_from_overlay` | Closed from the white-button menu |
+| `replaced` | Closed to make room for a different game |
+| `idle_killed` | Reaped by the idle kill - nobody was there |
+| `vanished` | A held game's process disappeared on its own |
+| `hard_reset` | Open when the white button forced a restart |
+| `launcher_exit` | Open when the launcher quit for any other reason |
+
+A `game_open` with no matching `game_close` means the cabinet lost power
+mid-session; the summary skips those rather than guessing at them.
+
+Recording can never take the cabinet down. A folder that cannot be written
+disables logging for the run and reports itself on the amber problem strip
+alongside scan and config trouble.
+
 ## Cursor hiding
 
 There is no mouse during arcade play, but one may still get plugged in for
@@ -345,9 +399,13 @@ The launcher can run on a desktop against fake games. Paths are overridable:
 godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json
 ```
 
-`--games-dir`, `--keymap-path`, `--attract-video`, `--config-path` and
-`--no-fullscreen` also read from `ARCADE_GAMES_DIR`, `ARCADE_KEYMAP_PATH`,
-`ARCADE_ATTRACT_VIDEO` and `ARCADE_CONFIG_PATH`.
+`--games-dir`, `--keymap-path`, `--attract-video`, `--config-path`,
+`--analytics-dir` and `--no-fullscreen` also read from `ARCADE_GAMES_DIR`,
+`ARCADE_KEYMAP_PATH`, `ARCADE_ATTRACT_VIDEO`, `ARCADE_CONFIG_PATH` and
+`ARCADE_ANALYTICS_DIR`. Point `--analytics-dir` somewhere temporary on a dev
+box so test runs do not land in the real log; sessions started with
+`--simulate-launch` are tagged `"simulated": true` and are ignored by the
+summary either way.
 
 The system overlay, attract mode, and held games all depend on
 shanwan-remap's control channel (see shanwan-remap/README.md), which has
@@ -413,6 +471,8 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/arcade_bus.gd` | Client for shanwan-remap's control channel (autoload `Bus`) |
 | `scripts/input_router.gd` | Feeds control-channel events into Godot's Input while blocked |
 | `scripts/idle_tracker.gd` | Attract/idle-kill thresholds (autoload `Idle`) |
+| `scripts/analytics.gd` | Per-session open/close event log (autoload `Analytics`) |
+| `scripts/analytics_summary.gd` | Renders `summary.txt` from those logs |
 | `scripts/session_controller.gd` | State machine for the system overlay, attract mode, held games |
 | `scripts/system_overlay.gd`, `scripts/attract_screen.gd` | The two on top of everything else |
 | `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
