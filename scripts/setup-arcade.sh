@@ -93,6 +93,23 @@ else
 	echo "Kept the existing $KEYMAP_FILE"
 fi
 
+# --- weekly reboot ------------------------------------------------------------
+#
+# The cabinet reboots itself every Saturday at 02:00 (local time), so weeks of
+# uptime never get to pile up leaks, a stuck controller or a wedged session.
+# A system timer rather than a user one, because a reboot needs root. The
+# units live in systemd/ next to the launcher's own; see the timer for why it
+# is not Persistent.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REBOOT_UNIT=arcade-weekly-reboot
+
+echo
+echo "Installing the weekly reboot timer (Saturday 02:00)..."
+install -m 0644 "$REPO_ROOT/systemd/$REBOOT_UNIT.service" /etc/systemd/system/
+install -m 0644 "$REPO_ROOT/systemd/$REBOOT_UNIT.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now "$REBOOT_UNIT.timer"
+
 # --- KWin settings ------------------------------------------------------------
 #
 # Two things below - the compositor's own cursor, and window activation - are
@@ -294,6 +311,7 @@ echo "  games dir    : $GAMES_DIR"
 echo "  cursor theme : $CURSOR_THEME_DIR"
 echo "  cursor hide  : KWin hides its own after ${CURSOR_HIDE_SECONDS}s idle"
 echo "  kwin focus   : stealing prevention = $FSP_LEVEL (none)"
+echo "  reboot       : weekly, Saturday 02:00 ($REBOOT_UNIT.timer)"
 echo
 echo "Group membership only applies to new logins - log $ARCADE_USER out and"
 echo "back in (or reboot) before starting the launcher."

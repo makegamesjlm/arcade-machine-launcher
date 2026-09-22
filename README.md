@@ -118,7 +118,9 @@ directory writable by a new `arcade` group, adds your user to it, seeds a
 starting keymap, installs the transparent cursor theme, and turns off KWin's
 focus stealing prevention so the launcher can raise its own window over a
 running game (see "Window activation" below — the system overlay does not work
-without it). Log out and back in afterwards so the group membership takes
+without it). It also installs `arcade-weekly-reboot.timer`, a system timer that
+reboots the whole cabinet every Saturday at 02:00 local time (check it with
+`systemctl list-timers arcade-weekly-reboot.timer`). Log out and back in afterwards so the group membership takes
 effect.
 
 The launcher then writes `/etc/shanwan-remap/keymap.json` directly, with no
@@ -499,10 +501,10 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
 | `scripts/main.gd` | Grid, navigation, the launch takeover and the running tile's mark, volume HUD |
 | `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
-| `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor hiding, KWin settings |
+| `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor hiding, KWin settings, weekly reboot timer |
 | `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |
 | `scripts/install-git-hooks.sh`, `.ps1` | Enables the build-number pre-commit hook |
-| `systemd/` | User unit and install notes |
+| `systemd/` | Launcher user unit, weekly reboot system timer, install notes |
 | `theme/fonts/` | Handjet font variations used by the UI |
 | `assets/fonts/` | Bundled Handjet variable font and its license |
 
