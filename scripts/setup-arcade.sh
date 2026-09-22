@@ -304,6 +304,59 @@ if [[ "$HAVE_KWIN_CONFIG" == 1 ]]; then
 	fi
 fi
 
+# --- notifications ------------------------------------------------------------
+#
+# Nothing but the launcher and its games may ever be on screen, and Plasma's
+# notification popups draw over a fullscreen game. The usual culprit is uupd,
+# Bazzite's auto-updater, nagging that the image is out of date or that a
+# night's update failed - but disk-space warnings, device plug-ins and the
+# like all arrive the same way. Updates themselves keep running; only the
+# popups go (the weekly reboot above is what actually applies the updates).
+#
+# Do Not Disturb, switched on until a date nobody will reach, silences all of
+# it at the source. Plain DND is not enough on its own: Plasma lets
+# *critical* notifications through it by default, and uupd sends exactly
+# those, so CriticalInDndMode is turned off too. Sounds go with the popups.
+# Notifications still land in the history, so they can be read during
+# maintenance from the tray's bell icon. To undo: delete these keys from
+# ~/.config/plasmanotifyrc (or turn DND off from the tray).
+DND_UNTIL="2099,1,1,0,0,0"
+
+kde_write() {
+	[[ "$HAVE_KWIN_CONFIG" == 1 ]] || return 0
+	sudo -u "$ARCADE_USER" kwriteconfig6 --file "$1" --group "$2" --key "$3" "$4"
+}
+
+echo
+echo "Silencing desktop notifications (permanent Do Not Disturb)..."
+kde_write plasmanotifyrc DoNotDisturb Until "$DND_UNTIL"
+kde_write plasmanotifyrc DoNotDisturb NotificationSoundsMuted true
+kde_write plasmanotifyrc Notifications CriticalInDndMode false
+kde_write plasmanotifyrc Notifications LowPriorityPopups false
+# File-transfer and other progress popups are a separate switch from DND.
+kde_write plasmanotifyrc Jobs InNotifications false
+if [[ "$HAVE_KWIN_CONFIG" == 0 ]]; then
+	echo "warning: kwriteconfig6 not found - notifications are NOT silenced." >&2
+	echo "         Turn on Do Not Disturb by hand, and in System Settings >" >&2
+	echo "         Notifications turn off 'Show critical notifications'." >&2
+fi
+
+# Bazzite also pops "announcement" notifications at login from an XDG
+# autostart entry. DND would swallow them, but there is no reason to run it
+# on a kiosk; a Hidden=true entry of the same name in the user's autostart
+# dir is the standard per-user way to switch a system autostart off.
+ANNOUNCE_DESKTOP=bazzite-announcement.desktop
+if [[ -f "/etc/xdg/autostart/$ANNOUNCE_DESKTOP" ]]; then
+	sudo -u "$ARCADE_USER" mkdir -p "$ARCADE_HOME/.config/autostart"
+	sudo -u "$ARCADE_USER" tee "$ARCADE_HOME/.config/autostart/$ANNOUNCE_DESKTOP" > /dev/null <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Bazzite Announcements
+Hidden=true
+EOF
+	echo "  disabled Bazzite login announcements"
+fi
+
 echo
 echo "Done."
 echo "  keymap dir   : $KEYMAP_DIR (group $GROUP, group-writable)"
@@ -312,6 +365,7 @@ echo "  cursor theme : $CURSOR_THEME_DIR"
 echo "  cursor hide  : KWin hides its own after ${CURSOR_HIDE_SECONDS}s idle"
 echo "  kwin focus   : stealing prevention = $FSP_LEVEL (none)"
 echo "  reboot       : weekly, Saturday 02:00 ($REBOOT_UNIT.timer)"
+echo "  notifications: silenced (Do Not Disturb until 2099, criticals included)"
 echo
 echo "Group membership only applies to new logins - log $ARCADE_USER out and"
 echo "back in (or reboot) before starting the launcher."
