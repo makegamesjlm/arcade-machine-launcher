@@ -2,7 +2,7 @@ class_name SessionController
 extends Node
 ## Single place that sequences mode/freeze/window changes for the system
 ## overlay, attract mode, and held games. Everything else - the grid, the
-## volume HUD, the launch lifecycle's own messaging - stays in main.gd; this
+## launch lifecycle's own messaging - stays in main.gd; this
 ## owns only the states layered on top of it. The grid's RUNNING mark follows
 ## the game's whole life, not the screen, so it is main.gd's to clear on
 ## finished/failed; the one ending that never reaches those handlers

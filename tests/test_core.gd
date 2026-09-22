@@ -14,7 +14,6 @@ func _ready() -> void:
 	_test_scanner(fixtures)
 	_test_keymap_validation()
 	_test_keymap_install()
-	_test_volume_input_mapping()
 	_test_volume_parsing()
 	_test_white_is_a_system_button()
 	_test_xbox_to_joy_button_table()
@@ -166,26 +165,6 @@ func _test_keymap_install() -> void:
 	var missing := KeymapWriter.install(Cfg.LAUNCHER_KEYMAP, dir.path_join("nope/keymap.json"))
 	_check(missing.contains("setup-arcade.sh"),
 		"a missing target dir points at the setup script, got '%s'" % missing)
-
-
-func _test_volume_input_mapping() -> void:
-	print("\n-- volume input mapping")
-
-	# These must agree with Cfg.LAUNCHER_KEYMAP: top-left emits LB, top-right X,
-	# and top-middle Y through the cabinet remapper.
-	var expected_buttons := {
-		"volume_down": JOY_BUTTON_LEFT_SHOULDER,
-		"volume_up": JOY_BUTTON_X,
-		"volume_mute": JOY_BUTTON_Y,
-	}
-	for action: String in expected_buttons:
-		var button := int(expected_buttons[action])
-		var matched := false
-		for event in InputMap.action_get_events(action):
-			if event is InputEventJoypadButton and event.button_index == button:
-				matched = true
-				break
-		_check(matched, "%s is bound to joypad button %d" % [action, button])
 
 
 func _test_volume_parsing() -> void:

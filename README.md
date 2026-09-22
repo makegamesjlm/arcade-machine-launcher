@@ -138,13 +138,13 @@ Then build and install the service: [systemd/README-service.md](systemd/README-s
 | Joystick / d-pad | Move around the grid |
 | Bottom-right button | Play the selected game, or confirm in the system overlay |
 | Bottom-middle button | Dismiss an error, or Continue in the system overlay |
-| Top-left / Top-right button | System volume down / up |
-| Top-middle button | Mute toggle |
 | White button | Open the system overlay |
 
-Either controller can drive the menu. Volume, mute, and the plain shortcuts
-above all work only while the grid is the active surface — not while a game
-is running, the system overlay is open, or attract mode is showing.
+Either controller can drive the menu. The plain shortcuts above work only while
+the grid is the active surface — not while a game is running, the system
+overlay is open, or attract mode is showing. The top buttons do nothing in the
+launcher: volume and mute are changed only from the system overlay's volume
+row (white button), so nobody changes them by accident from the grid.
 
 ## What happens on select
 
@@ -501,7 +501,7 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/session_controller.gd` | State machine for the system overlay, attract mode, held games |
 | `scripts/system_overlay.gd`, `scripts/attract_screen.gd` | The two on top of everything else |
 | `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
-| `scripts/main.gd` | Grid, navigation, the launch takeover and the running tile's mark, volume HUD |
+| `scripts/main.gd` | Grid, navigation, the launch takeover and the running tile's mark |
 | `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
 | `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor hiding, KWin settings, weekly reboot timer, notifications off |
 | `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |
