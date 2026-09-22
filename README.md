@@ -131,6 +131,19 @@ followed by a rename — so the polling service never reads a half-written file.
 
 Then build and install the service: [systemd/README-service.md](systemd/README-service.md).
 
+### Remote access
+
+The cabinet is reachable over Tailscale as `jlmarcade-1`, so the connecting
+machine must be on the same tailnet.
+
+- **Remote desktop:** connect an RDP client (Windows: `mstsc`) to
+  `jlmarcade-1:3389`. This is KDE's built-in RDP server, set up once by hand in
+  System Settings > Remote Desktop, with its own username and password.
+  Moving the remote mouse shows the cursor on the cabinet screen.
+- **SSH:** `ssh makegamesjlm@jlmarcade-1`. This goes through Tailscale SSH
+  (`tailscale set --ssh`), not the system `sshd`, which stays disabled — so
+  it only works over the tailnet.
+
 ## Controls
 
 | Input | Action |
