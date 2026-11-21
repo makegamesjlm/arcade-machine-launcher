@@ -1,8 +1,8 @@
 class_name SessionController
 extends Node
 ## Single place that sequences mode/freeze/window changes for the system
-## overlay, attract mode, and held games. Everything else - the grid, the
-## volume HUD, the launch lifecycle's own messaging - stays in main.gd; this
+## overlay, attract mode, held games, and the launch splash. Everything else - the grid, the
+## launch lifecycle's own messaging - stays in main.gd; this
 ## owns only the states layered on top of it. The grid's RUNNING mark follows
 ## the game's whole life, not the screen, so it is main.gd's to clear on
 ## finished/failed; the one ending that never reaches those handlers
@@ -10,6 +10,8 @@ extends Node
 ##
 ## States:
 ##   MENU      - the grid, nothing held, nothing playing
+##   LAUNCHING - a game was just picked: the launch splash is playing while it
+##               loads underneath (see _run_launch_splash)
 ##   PLAYING   - a game owns the screen (main.gd behind or below it)
 ##   OVERLAY   - the system overlay is open, over a frozen game or the menu
 ##   HELD_MENU - the grid is showing, with a game held frozen in the background
@@ -23,6 +25,12 @@ extends Node
 ## exactly the same reason: is_held is what this whole invariant and the
 ## one-held-game-ever rule both key off.
 ##
+## The one exception is the launch splash (LAUNCHING), which gates a game that
+## is running but not yet on screen - it is part of starting the game, not a
+## parked session, so nothing is held - and keys the gate off _splash_blocking
+## instead. That stays BLOCKED until the game has been revealed, so nothing
+## reaches it before it can be seen.
+##
 ## Idle.playing is centralized in _set_state(). The grid's ui-lock is not:
 ## main.gd still owns locking for its own plain launch/return cycle (with
 ## its own RETURN_LOCKOUT_SECONDS swallow timing, unrelated to any of this),
@@ -32,7 +40,29 @@ extends Node
 ## they cannot undo a lock this owns, e.g. main.gd finishing its own
 ## post-game lockout while attract mode has since taken over the screen.
 
-enum State { MENU, PLAYING, OVERLAY, HELD_MENU, ATTRACT }
+enum State { MENU, LAUNCHING, PLAYING, OVERLAY, HELD_MENU, ATTRACT }
+
+## How long a freshly started game gets to bring up its window - noticed as it
+## taking focus from the launcher - before the splash reveals it regardless.
+## Counted from the click, so it only ever adds to a load that outlasts the
+## splash's own animation.
+const GAME_WINDOW_TIMEOUT_SECONDS := 8.0
+## Frame rate while the splash plays. GameLauncher drops to a near-idle rate
+## once a game starts, which would stutter the video; this is as fast as it
+## plays, without competing any harder than that with the game's loading.
+const SPLASH_FPS := 60
+## How long the launcher's window gets to come back to the front after the
+## game's new window has covered it, before the splash carries on regardless.
+const SPLASH_RAISE_SECONDS := 1.0
+## How long KWin gets to bring the game's window back in front of the
+## launcher's after the splash before falling back to minimizing the launcher
+## (see _step_aside_for_game). The splash (or its last frame) stays up meanwhile.
+const GAME_RAISE_TIMEOUT_SECONDS := 2.0
+## How long after stepping aside the splash (its held frame, if there was no
+## wipe-out) is taken down and the launcher's background restored - long after
+## the game's window has covered the launcher's (or the launcher was
+## minimized), so the launcher is never drawn in between.
+const SPLASH_CLEANUP_SECONDS := 1.5
 
 var _state: int = State.MENU
 ## Which of MENU/PLAYING/HELD_MENU the overlay was opened from, so Continue
@@ -52,9 +82,23 @@ var _white_held := false
 ## fires, white was held long enough (Cfg.hard_reset_seconds) to mean a hard
 ## reset rather than a tap.
 var _hard_reset_timer: Timer
+## True while the keyboard stand-in for white (the `system_button` action, F1)
+## is down. Tracked apart from _white_held so losing window focus mid-hold -
+## an RDP client minimized or disconnected before the key-up arrives - can
+## cancel a keyboard hold without ever touching a real white-button hold.
+var _white_key_down := false
+## Bumped to cancel a launch splash sequence in flight; each step of
+## _run_launch_splash() checks it is still the current one after every await.
+var _launch_serial := 0
+## True while the launch splash has the gate BLOCKED (from the click until the
+## game has been revealed - see _run_launch_splash). Kept apart from GameLauncher.is_held
+## on purpose: a held game is a parked session (Analytics counts each one, and
+## leaves the time out of playtime), and a splash is not.
+var _splash_blocking := false
 
 @onready var _overlay_ui: SystemOverlay = %SystemOverlay
 @onready var _attract_ui: AttractScreen = %AttractScreen
+@onready var _splash: SplashScreen = %SplashScreen
 
 
 func _ready() -> void:
@@ -95,23 +139,191 @@ func request_play(game: GameEntry, simulated_outcome: int = GameLauncher.Simulat
 		_resume_held_game()
 		return
 	if _launcher.is_held:
+		Analytics.note_close_reason(Analytics.REASON_REPLACED)
 		await _launcher.close_held()
 		Bus.set_mode(Bus.MODE_PASS)
-	_launcher.launch(game, simulated_outcome)
+	if runs_launch_splash():
+		_run_launch_splash(game, simulated_outcome)
+	else:
+		_launcher.launch(game, simulated_outcome)
 
 
 # --- entering / leaving PLAYING --------------------------------------------
 
+## Whether a game that starts now gets the launch splash. A simulated game has
+## no window for it to reveal.
+func runs_launch_splash() -> bool:
+	return _splash.is_ready and not Cfg.simulate_launch
+
+
 func _on_game_started(_game: GameEntry) -> void:
+	if _state == State.LAUNCHING:
+		# The splash is already playing (_run_launch_splash()), and the game is
+		# loading under it. Keep the video smooth rather than at the near-idle
+		# rate GameLauncher just dropped to.
+		Engine.max_fps = SPLASH_FPS
+		return
 	_set_state(State.PLAYING)
 
 
 ## Covers both finished(game, exit_code) and failed(game, reason) - only the
 ## state transition matters here; main.gd's own handlers show the actual
-## finished/failed messaging.
+## finished/failed messaging. A game gone mid-splash (or before the splash's
+## cleanup) takes the splash down with it, or the launcher would come back
+## covered by it.
 func _on_game_ended(_game, _detail = null) -> void:
-	if _state == State.PLAYING:
+	_cancel_launch_splash()
+	if _state == State.PLAYING or _state == State.LAUNCHING:
 		_set_state(State.MENU)
+
+
+# --- the launch splash -------------------------------------------------------
+
+## Launches `game` behind the splash, so the player sees the splash the
+## instant they pick a game and the game loads while it plays:
+##
+##   1. the splash starts over the grid, input to the game is gated, and the
+##      game's keymap is written and its process started straight away -
+##      no "Applying controller mapping" card, no waiting out the remapper's
+##      reload window first (the gate covers that; see below)
+##   2. whenever the game's window comes up (focus leaves the launcher - the
+##      compositor activates every new window), the launcher's is raised back
+##      over it, so the game keeps loading underneath, unseen
+##   3. the splash's middle stretch keeps looping until the window has come up
+##      (or GAME_WINDOW_TIMEOUT_SECONDS from the click has passed), and for at
+##      least long enough to make the splash Cfg.splash_seconds long; then it
+##      plays on to its last opaque frame (SplashScreen.finish_loop()) - a game
+##      quicker than that never waits, a slower one is still covered
+##   4. with the game underneath, the launcher's background is hidden and the
+##      wipe-out plays, uncovering it; then its window is brought back in
+##      front of the launcher's (_step_aside_for_game) for input focus
+##
+## The game is never frozen: it runs from the start, so it is ready when it
+## is revealed. Its input stays gated (_splash_blocking) until it is fully
+## revealed, and never for less than Cfg.keymap_reload_seconds after its keymap
+## was written, so it never sees the launcher's mapping.
+##
+## Anything that ends the game meanwhile cancels this (see _on_game_ended);
+## nothing else can start in LAUNCHING, since white, attract and the grid all
+## ignore it.
+func _run_launch_splash(game: GameEntry, simulated_outcome: int) -> void:
+	_launch_serial += 1
+	var serial := _launch_serial
+
+	Bus.set_mode(Bus.MODE_BLOCKED)
+	_splash_blocking = true
+	_set_state(State.LAUNCHING)
+	Engine.max_fps = SPLASH_FPS
+	_splash.play()
+
+	var clicked_msec := Time.get_ticks_msec()
+	var watch_focus := get_window().has_focus()
+	if not watch_focus:
+		push_warning("[session] launcher was not focused at launch; cannot see the game's "
+			+ "window arrive, so the splash loops for up to %ss" % GAME_WINDOW_TIMEOUT_SECONDS)
+	# Not awaited: with no reload wait it runs straight through to started (or
+	# failed) on the spot.
+	_launcher.launch(game, simulated_outcome, false)
+	if serial != _launch_serial:
+		return  # it failed on the pad; _on_game_ended took the splash down
+
+	# Steps 2-3: the animation loops while the game loads.
+	var window_up := false
+	var window_deadline := clicked_msec + int(GAME_WINDOW_TIMEOUT_SECONDS * 1000.0)
+	while serial == _launch_serial:
+		if window_up or Time.get_ticks_msec() >= window_deadline:
+			_splash.finish_loop()  # only the first call counts
+			if not _splash.is_playing:
+				break  # on its last opaque frame now
+		if watch_focus and not get_window().has_focus():
+			window_up = true
+			await _raise_over_game(serial)
+		else:
+			await get_tree().process_frame
+	if serial != _launch_serial:
+		return
+	if not window_up:
+		push_warning("[session] %s did not bring up a window within %ss; revealing it anyway"
+			% [game.name, GAME_WINDOW_TIMEOUT_SECONDS])
+		_launcher.return_to_foreground()  # in case it came up without taking focus
+		Engine.max_fps = SPLASH_FPS
+
+	# Step 4: the game is directly under the launcher's window now.
+	_main.set_background_visible(false)
+	_splash.play_outro()  # no-op without a wipe-out: the held frame stays up
+	await _splash.wait_until_done()
+	if serial != _launch_serial:
+		return
+	await _step_aside_for_game(serial)
+	if serial != _launch_serial:
+		return
+
+	if not game.keymap.is_empty():
+		var reload_left := clicked_msec + int(Cfg.keymap_reload_seconds * 1000.0) - Time.get_ticks_msec()
+		if reload_left > 0:
+			await get_tree().create_timer(reload_left / 1000.0).timeout
+			if serial != _launch_serial:
+				return
+	Bus.set_mode(Bus.MODE_PASS)
+	_splash_blocking = false
+	_set_state(State.PLAYING)
+
+	await get_tree().create_timer(SPLASH_CLEANUP_SECONDS).timeout
+	if serial != _launch_serial:
+		return
+	_splash.dismiss()
+	_main.set_background_visible(true)
+
+
+## The game's window has just come up over the launcher's, mid-splash: raises
+## the launcher's back over it and waits (briefly) for that to land, so the
+## caller does not mistake the same arrival for a second one.
+func _raise_over_game(serial: int) -> void:
+	_launcher.return_to_foreground()
+	Engine.max_fps = SPLASH_FPS  # return_to_foreground() lifts the cap entirely
+	var deadline := Time.get_ticks_msec() + int(SPLASH_RAISE_SECONDS * 1000.0)
+	while (serial == _launch_serial and not get_window().has_focus()
+			and Time.get_ticks_msec() < deadline):
+		await get_tree().process_frame
+	if serial == _launch_serial and not get_window().has_focus():
+		push_warning("[session] could not bring the launcher back over the game's window "
+			+ "within %ss" % SPLASH_RAISE_SECONDS)
+
+
+## Puts the game's window back in front of the launcher's. Preferably by having
+## KWin activate the game (GameLauncher.activate_game_window()), which leaves
+## the launcher mapped directly underneath - so when the game later quits, the
+## launcher is already there, not the desktop. Confirmed by the launcher's
+## window losing focus; if that does not happen within GAME_RAISE_TIMEOUT_SECONDS
+## (no gdbus, not a KWin session, the script failed), falls back to minimizing
+## the launcher the way Continue does (reveal_resumed_game()), which always
+## works but shows the desktop for a moment when the game quits.
+func _step_aside_for_game(serial: int) -> void:
+	# Focus is how success is noticed, so without it there is nothing to watch.
+	if get_window().has_focus() and _launcher.activate_game_window():
+		var deadline := Time.get_ticks_msec() + int(GAME_RAISE_TIMEOUT_SECONDS * 1000.0)
+		while (serial == _launch_serial and get_window().has_focus()
+				and Time.get_ticks_msec() < deadline):
+			await get_tree().process_frame
+		if serial != _launch_serial:
+			return
+		if not get_window().has_focus():
+			_launcher.go_to_background()  # under the game now; just stop drawing
+			return
+		push_warning("[session] KWin did not bring the game's window forward within %ss; "
+			% GAME_RAISE_TIMEOUT_SECONDS + "minimizing the launcher instead")
+	_launcher.reveal_resumed_game()
+
+
+## Stops a launch splash sequence wherever it is and takes the splash down.
+## Safe to call when none is running.
+func _cancel_launch_splash() -> void:
+	_launch_serial += 1
+	_splash.dismiss()
+	_main.set_background_visible(true)
+	if _splash_blocking:
+		_splash_blocking = false
+		Bus.set_mode(Bus.MODE_PASS)
 
 
 func _on_held_game_vanished(_game: GameEntry) -> void:
@@ -162,10 +374,40 @@ func _handle_white(pressed: bool) -> void:
 		_on_white_tap()
 
 
+## Keyboard stand-in for white, for testing over remote desktop where no
+## cabinet button can be pressed. F1 drives the exact same tap/hold logic as
+## the real button. It only reaches Godot while the launcher window has focus,
+## so unlike the real white it cannot interrupt a running game. Key repeat is
+## ignored: an echoed press would restart the hard-reset timer every few
+## frames and a hold would never reach it.
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("system_button"):
+		_white_key_down = true
+		_handle_white(true)
+	elif event.is_action_released("system_button") and _white_key_down:
+		_white_key_down = false
+		_handle_white(false)
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+## A key-up lost to a focus change would otherwise leave the hard-reset timer
+## running and quit the launcher a few seconds later. Cancels the hold
+## outright - neither a tap nor a reset.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT and _white_key_down:
+		_white_key_down = false
+		_white_held = false
+		_hard_reset_timer.stop()
+
+
 func _on_white_tap() -> void:
 	if _state == State.ATTRACT:
 		_on_attract_woken()
 		return
+	# LAUNCHING is deliberately not handled: the overlay would fight the splash
+	# sequence over the game's freeze and the launcher's window.
 	match _state:
 		State.PLAYING, State.MENU, State.HELD_MENU:
 			_open_overlay(_state)
@@ -188,6 +430,10 @@ func _on_hard_reset_due() -> void:
 func _hard_reset() -> void:
 	print("[session] hard reset: white held %ss - quitting for a clean restart"
 		% Cfg.hard_reset_seconds)
+	# Any open game dies with us in the cgroup, so its exit is never collected
+	# and no finished/failed signal is coming. Recorded here, before the quit,
+	# rather than left to teardown - see Analytics.close_open_session().
+	Analytics.close_open_session(Analytics.REASON_HARD_RESET)
 	get_tree().quit()
 
 
@@ -200,6 +446,7 @@ func _hard_reset() -> void:
 func _open_overlay(from_state: int) -> void:
 	_overlay_return_state = from_state
 	if from_state == State.PLAYING:
+		_cancel_launch_splash()  # its held frame may not be cleaned up yet
 		Bus.set_mode(Bus.MODE_BLOCKED)
 		_launcher.hold()
 		_launcher.return_to_foreground()
@@ -306,6 +553,7 @@ func _swallow_then_unlock() -> void:
 ## + (veto-guarded) unlock - nothing further to do here for that half.
 func _close_game() -> void:
 	_close_overlay_ui()
+	Analytics.note_close_reason(Analytics.REASON_CLOSED_FROM_OVERLAY)
 	if _launcher.is_held:
 		await _launcher.close_held()
 	else:
@@ -326,7 +574,10 @@ func _on_attract_due() -> void:
 	match _state:
 		State.OVERLAY, State.ATTRACT:
 			return  # already showing something on top, or already there
+		State.LAUNCHING:
+			return  # only seconds long; the game is about to own the screen
 		State.PLAYING:
+			_cancel_launch_splash()  # its held frame may not be cleaned up yet
 			Bus.set_mode(Bus.MODE_BLOCKED)
 			_launcher.hold()
 			_launcher.return_to_foreground()
@@ -361,6 +612,7 @@ func _on_attract_woken() -> void:
 func _on_kill_due() -> void:
 	if not _launcher.is_busy:
 		return
+	Analytics.note_close_reason(Analytics.REASON_IDLE_KILLED)
 	if _launcher.is_held:
 		await _launcher.close_held()
 	else:
@@ -402,6 +654,9 @@ func _gate_is_blocked() -> bool:
 			# once synthesized from the feed. In the overlay's short wrapping
 			# rows that double-step reads as a move in the opposite direction.
 			return _launcher.is_held
+		State.LAUNCHING:
+			# Blocked only while the splash is still covering the game.
+			return _splash_blocking
 		_:
 			return false
 
@@ -411,7 +666,7 @@ func _gate_is_blocked() -> bool:
 ## checks this so it can never undo a lock this owns (see the class doc
 ## comment for why that matters).
 func wants_ui_locked() -> bool:
-	return _state == State.OVERLAY or _state == State.ATTRACT
+	return _state == State.OVERLAY or _state == State.ATTRACT or _state == State.LAUNCHING
 
 
 func _lock_ui() -> void:

@@ -1,0 +1,20 @@
+# Reboots the whole cabinet once a week, Saturday 02:00 local time, so a long
+# uptime never gets to accumulate leaks, stuck devices or a wedged session.
+# System unit (a reboot needs root), installed by scripts/setup-arcade.sh into
+# /etc/systemd/system - unlike arcade-launcher.service, which is a user unit.
+#
+# Local time is the system time zone (timedatectl). Saturday 02:00 is clear of
+# DST changes in Israel, which happen on Friday and Sunday mornings.
+
+[Unit]
+Description=Weekly arcade cabinet reboot (Saturday 02:00)
+
+[Timer]
+OnCalendar=Sat *-*-* 02:00:00
+# Not Persistent: if the cabinet was off at 02:00, it must not reboot the
+# moment it next boots - someone just switched it on to play.
+Persistent=false
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -18,8 +18,8 @@ Remaps SHANWAN PS3/PC Gamepad for arcade cabinets. Fixes the dpad-as-stick issue
 ## Requirements
 
 - Linux (Fedora, Bazzite, or similar)
-- Python 3.8+
-- python3-devel and gcc (for building evdev — can be removed after install)
+- A system `python3` with `venv` and `pip` (used only to bootstrap uv)
+- gcc (for building evdev) and network access during install
 
 ## Install
 
@@ -28,6 +28,24 @@ tar xzf shanwan-remap.tar.gz
 cd shanwan-remap
 sudo ./install.sh
 ```
+
+### Pinned Python
+
+The service does not run on the system Python. The installer uses
+[uv](https://docs.astral.sh/uv/) to download a standalone CPython
+(`PYTHON_VERSION` in `install.sh`, currently 3.14) into
+`/opt/shanwan-remap/python` and builds the venv on that.
+
+This matters on Bazzite: an automatic OS image update replaced Python 3.14 with
+3.15. That orphaned a venv built on the system Python, so the service
+crash-looped with `ModuleNotFoundError: No module named 'shanwan_remap'` and the
+white button stopped working. OS updates never touch `/opt`, so the pinned
+interpreter keeps working through image updates.
+
+Re-running `install.sh` downloads nothing that is already in place. It reuses
+the pinned Python and the venv, and only reinstalls the package from the local
+source. To move to a newer Python on purpose, change `PYTHON_VERSION` and run
+the installer again. It then downloads that version and rebuilds the venv on it.
 
 ## Cabinet setup (one-time)
 

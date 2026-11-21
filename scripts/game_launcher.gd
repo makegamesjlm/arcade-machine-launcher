@@ -5,7 +5,8 @@ extends Node
 ##
 ## Normal sequence:
 ##   1. install the game's keymap.json at Cfg.keymap_path
-##   2. wait out the remap service's reload window
+##   2. wait out the remap service's reload window (skipped for the launch
+##      splash, which gates the game's input that long itself)
 ##   3. start the executable and step out of the way (near-idle, left for the
 ##      game's own window to cover - see go_to_background())
 ##   4. poll until the process is gone
@@ -35,6 +36,13 @@ signal failed(game: GameEntry, reason: String)
 ## OOM killer took it, not a deliberate close_held(). Survivable: state is
 ## already cleared by the time this fires, same as finished/failed.
 signal held_game_vanished(game: GameEntry)
+## The current game has just been frozen and parked in the background (hold()),
+## or thawed again (resume_held()). Emitted only on a real change of state, so
+## the two always alternate: Analytics measures the stretch between them to tell
+## time spent playing apart from time spent parked behind the system overlay or
+## the attract loop. Nothing about the freeze itself depends on these.
+signal held(game: GameEntry)
+signal resumed(game: GameEntry)
 
 ## Outcomes available to the interactive development simulator. Ignored unless
 ## Cfg.simulate_launch was enabled explicitly on the command line.
@@ -56,6 +64,38 @@ const BACKGROUND_MAX_FPS := 5
 ## cabinet service's full 2.2 second reload delay on every simulated launch.
 const SIMULATED_PREPARE_SECONDS := 0.45
 const SIMULATED_CRASH_SECONDS := 1.0
+
+## KWin script that activates (raises and focuses) the window owned by the
+## process id substituted for %d - see activate_game_window(). Handles both the
+## Plasma 6 (windowList/activeWindow) and Plasma 5 (clientList/activeClient)
+## scripting APIs.
+const ACTIVATE_GAME_JS := """// Written by the arcade launcher - see GameLauncher.activate_game_window().
+var pid = %d;
+var plasma6 = typeof workspace.windowList === "function";
+var windows = plasma6 ? workspace.windowList() : workspace.clientList();
+for (var i = 0; i < windows.length; i++) {
+	var w = windows[i];
+	if (w.pid === pid && w.normalWindow) {
+		if (plasma6) { workspace.activeWindow = w; } else { workspace.activeClient = w; }
+		break;
+	}
+}
+"""
+## Loads the script above into KWin over DBus, runs it, and unloads it again.
+## Run as `sh -c <this> arcade-activate <script path> <script name>`. Unloads
+## any leftover copy first, since KWin refuses to load a second script under a
+## name that is still loaded.
+const ACTIVATE_GAME_SH := r"""js=$1 name=$2
+kwin() { gdbus call --session --dest org.kde.KWin "$@"; }
+kwin --object-path /Scripting --method org.kde.kwin.Scripting.unloadScript "$name" >/dev/null 2>&1
+out=$(kwin --object-path /Scripting --method org.kde.kwin.Scripting.loadScript "$js" "$name") || exit 1
+id=$(printf '%s' "$out" | sed -E 's/^\(int32 (-?[0-9]+),\)$/\1/')
+case $id in ''|-*|*[!0-9]*) exit 1 ;; esac
+kwin --object-path "/Scripting/Script$id" --method org.kde.kwin.Script.run >/dev/null || exit 1
+sleep 1
+kwin --object-path /Scripting --method org.kde.kwin.Scripting.unloadScript "$name" >/dev/null 2>&1
+"""
+const ACTIVATE_GAME_SCRIPT_NAME := "arcade-launcher-activate-game"
 
 var is_busy: bool:
 	get: return _current != null
@@ -97,7 +137,15 @@ func apply_launcher_keymap() -> String:
 	return KeymapWriter.install(Cfg.LAUNCHER_KEYMAP, Cfg.keymap_path)
 
 
-func launch(game: GameEntry, simulated_outcome: int = SimulatedOutcome.SUCCESS) -> void:
+## `wait_for_keymap_reload` false starts the process the moment the keymap is
+## written instead of waiting out Cfg.keymap_reload_seconds first. Only for a
+## caller that keeps the game's input gated (Bus.MODE_BLOCKED) at least that
+## long itself - the launch splash does (see SessionController) - since the
+## remapper may still be on the old mapping when the game first reads the pad.
+## The virtual pad itself never changes shape between keymaps, only what the
+## physical buttons drive, so nothing the game enumerates at startup differs.
+func launch(game: GameEntry, simulated_outcome: int = SimulatedOutcome.SUCCESS,
+		wait_for_keymap_reload: bool = true) -> void:
 	if is_busy:
 		push_warning("ignoring launch of %s, %s is already running" % [game.id, _current.id])
 		return
@@ -118,7 +166,7 @@ func launch(game: GameEntry, simulated_outcome: int = SimulatedOutcome.SUCCESS) 
 		_start_simulated(game, simulated_outcome)
 		return
 
-	if not game.keymap.is_empty():
+	if wait_for_keymap_reload and not game.keymap.is_empty():
 		# The service polls for changes; give it the documented window so the
 		# game's first frame already sees the right buttons.
 		await get_tree().create_timer(Cfg.keymap_reload_seconds).timeout
@@ -252,7 +300,13 @@ func hold() -> void:
 	if _current == null:
 		return
 	freeze()
+	# The re-freeze above stays unconditional (SIGSTOP on a stopped process is a
+	# no-op), but the signal must not repeat, or the frozen stretches it marks
+	# would nest rather than alternate.
+	var was_held := _held
 	_held = true
+	if not was_held:
+		held.emit(_current)
 
 
 ## Un-freezes the held game. Does not touch window mode or FPS - the caller
@@ -263,6 +317,7 @@ func resume_held() -> void:
 		return
 	_held = false
 	thaw()
+	resumed.emit(_current)
 
 
 ## Shuts the current game down completely, whether it is running or held
@@ -349,6 +404,32 @@ func go_to_background() -> void:
 func reveal_resumed_game() -> void:
 	Engine.max_fps = BACKGROUND_MAX_FPS
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED)
+
+
+## Asks KWin to activate the game's own window, bringing it back over the
+## launcher's without minimizing the launcher - so the launcher stays mapped
+## directly underneath, exactly as after a fresh launch, and is what shows the
+## instant the game quits (rather than the desktop, which is what a minimized
+## launcher leaves behind until it is restored). Used after the launch splash;
+## see SessionController._step_aside_for_game().
+##
+## Fire-and-forget: runs in the background and returns at once. True only means
+## the attempt was started - the caller confirms it worked by watching the
+## launcher's window lose focus, and falls back to reveal_resumed_game() if it
+## does not. Needs gdbus and a KWin session; without either it simply fails.
+func activate_game_window() -> bool:
+	if _pid < 0 or not OS.has_feature("linux"):
+		return false
+	var js_path := OS.get_user_data_dir().path_join("activate-game.js")
+	var file := FileAccess.open(js_path, FileAccess.WRITE)
+	if file == null:
+		push_warning("[launcher] could not write %s" % js_path)
+		return false
+	file.store_string(ACTIVATE_GAME_JS % _pid)
+	file.close()
+	var helper := OS.create_process("/bin/sh",
+		["-c", ACTIVATE_GAME_SH, "arcade-activate", js_path, ACTIVATE_GAME_SCRIPT_NAME])
+	return helper >= 0
 
 
 ## Brings the launcher back over whatever is on screen, including a game that

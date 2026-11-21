@@ -1,0 +1,8 @@
+# Started only by arcade-weekly-reboot.timer; see that file.
+
+[Unit]
+Description=Weekly arcade cabinet reboot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl reboot

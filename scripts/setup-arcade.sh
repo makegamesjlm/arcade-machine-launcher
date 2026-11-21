@@ -93,6 +93,50 @@ else
 	echo "Kept the existing $KEYMAP_FILE"
 fi
 
+# --- weekly reboot ------------------------------------------------------------
+#
+# The cabinet reboots itself every Saturday at 02:00 (local time), so weeks of
+# uptime never get to pile up leaks, a stuck controller or a wedged session.
+# A system timer rather than a user one, because a reboot needs root. The
+# units live in systemd/ next to the launcher's own; see the timer for why it
+# is not Persistent.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REBOOT_UNIT=arcade-weekly-reboot
+
+echo
+echo "Installing the weekly reboot timer (Saturday 02:00)..."
+install -m 0644 "$REPO_ROOT/systemd/$REBOOT_UNIT.service" /etc/systemd/system/
+install -m 0644 "$REPO_ROOT/systemd/$REBOOT_UNIT.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now "$REBOOT_UNIT.timer"
+
+# --- KWin settings ------------------------------------------------------------
+#
+# Two things below - the compositor's own cursor, and window activation - are
+# KWin policy rather than anything the launcher can decide for itself, so both
+# are written into the arcade user's kwinrc. Collected behind one helper and
+# one live reload at the end, so neither section has to repeat the availability
+# check or the DBus dance.
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+	HAVE_KWIN_CONFIG=1
+else
+	HAVE_KWIN_CONFIG=0
+	echo
+	echo "warning: kwriteconfig6 not found - skipping both KWin settings." >&2
+	echo "         Without them KDE's own cursor flashes on screen every time" >&2
+	echo "         a game's window opens, and the system overlay will not" >&2
+	echo "         appear over a running game (the launcher's window only" >&2
+	echo "         glows in the task manager). Set them by hand in System" >&2
+	echo "         Settings > Window Management > Desktop Effects > Hide" >&2
+	echo "         Cursor, and > Window Behavior > Focus > Focus stealing" >&2
+	echo "         prevention: None." >&2
+fi
+
+kwin_write() {
+	[[ "$HAVE_KWIN_CONFIG" == 1 ]] || return 0
+	sudo -u "$ARCADE_USER" kwriteconfig6 --file kwinrc --group "$1" --key "$2" "$3"
+}
+
 # --- cursor hiding ------------------------------------------------------------
 #
 # The cabinet has no mouse during arcade play, but a mouse may well get
@@ -190,6 +234,40 @@ for gtk_dir in gtk-3.0 gtk-4.0; do
 	fi
 done
 
+# The transparent theme above only covers a cursor a *client* draws. It cannot
+# touch the one KWin draws itself, and on Wayland the compositor owns the
+# pointer until a surface claims it: from the moment a game's window is mapped
+# until that game gets far enough into its own startup to set a cursor for it,
+# KWin renders its default arrow. That gap is the cursor that flashes on screen
+# on every launch, and no client-side setting can reach it - not the theme, not
+# Godot's own MOUSE_MODE_HIDDEN, which only ever applied to the launcher's own
+# window anyway.
+#
+# KWin's built-in "Hide Cursor" effect (Plasma 6.2+) is the one thing that can:
+# it stops the compositor rendering a pointer at all after CURSOR_HIDE_SECONDS
+# with no real pointer input, which on a cabinet with no mouse means "a few
+# seconds after login, and then forever". Being compositor-level, it covers the
+# mapping gap that nothing else could.
+#
+# Unlike the session-wide cursor theme this script used to set, this does not
+# blind maintenance: the cursor comes straight back the instant a plugged-in
+# mouse actually moves, and only fades again after the same few seconds of it
+# sitting still. That is the whole reason the timeout is seconds rather than
+# near-zero - long enough to work with a mouse comfortably, short enough that
+# the cabinet is clean well before anyone walks up to it.
+#
+# HideOnTyping is set for completeness rather than effect: keyboard input in
+# that effect only ever *hides* the cursor, never shows it, so cabinet buttons
+# can never undo this - but most of them map to arrows and Enter, which the
+# effect classes as functional keys and deliberately ignores. The inactivity
+# timeout is what actually does the work here.
+CURSOR_HIDE_SECONDS=5
+
+echo "Hiding KWin's own cursor after ${CURSOR_HIDE_SECONDS}s without mouse input..."
+kwin_write Plugins hidecursorEnabled true
+kwin_write Effect-hidecursor InactivityDuration "$CURSOR_HIDE_SECONDS"
+kwin_write Effect-hidecursor HideOnTyping true
+
 # --- window activation --------------------------------------------------------
 #
 # The system overlay has to come up over a running game, so the launcher calls
@@ -210,28 +288,73 @@ done
 # default is 1 ("Low"), which is what to restore if this ever needs undoing.
 FSP_LEVEL=0
 
-echo
-if command -v kwriteconfig6 >/dev/null 2>&1; then
-	echo "Allowing the launcher to raise its own window (KWin focus stealing prevention)..."
-	sudo -u "$ARCADE_USER" kwriteconfig6 --file kwinrc \
-		--group Windows --key FocusStealingPreventionLevel "$FSP_LEVEL"
+echo "Allowing the launcher to raise its own window (KWin focus stealing prevention)..."
+kwin_write Windows FocusStealingPreventionLevel "$FSP_LEVEL"
 
-	# Best-effort live reload. Usually fails from here, because reaching the
-	# user's session bus needs DBUS_SESSION_BUS_ADDRESS and this script runs
-	# as root; the log out / reboot below covers that case, so a failure is
-	# not worth stopping for.
+# Best-effort live reload, covering every kwinrc change above. Usually fails
+# from here, because reaching the user's session bus needs
+# DBUS_SESSION_BUS_ADDRESS and this script runs as root; the log out / reboot
+# below covers that case, so a failure is not worth stopping for.
+if [[ "$HAVE_KWIN_CONFIG" == 1 ]]; then
 	if sudo -u "$ARCADE_USER" dbus-send --session --type=method_call \
 		--dest=org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1; then
-		echo "  applied to the running session."
+		echo "  KWin settings applied to the running session."
 	else
-		echo "  will apply when $ARCADE_USER next logs in."
+		echo "  KWin settings will apply when $ARCADE_USER next logs in."
 	fi
-else
-	echo "warning: kwriteconfig6 not found - skipping the KWin focus setting." >&2
-	echo "         Without it the system overlay will not appear over a running" >&2
-	echo "         game; the launcher's window will only glow in the task manager." >&2
-	echo "         Set it by hand in System Settings > Window Management >" >&2
-	echo "         Window Behavior > Focus > Focus stealing prevention: None." >&2
+fi
+
+# --- notifications ------------------------------------------------------------
+#
+# Nothing but the launcher and its games may ever be on screen, and Plasma's
+# notification popups draw over a fullscreen game. The usual culprit is uupd,
+# Bazzite's auto-updater, nagging that the image is out of date or that a
+# night's update failed - but disk-space warnings, device plug-ins and the
+# like all arrive the same way. Updates themselves keep running; only the
+# popups go (the weekly reboot above is what actually applies the updates).
+#
+# Do Not Disturb, switched on until a date nobody will reach, silences all of
+# it at the source. Plain DND is not enough on its own: Plasma lets
+# *critical* notifications through it by default, and uupd sends exactly
+# those, so CriticalInDndMode is turned off too. Sounds go with the popups.
+# Notifications still land in the history, so they can be read during
+# maintenance from the tray's bell icon. To undo: delete these keys from
+# ~/.config/plasmanotifyrc (or turn DND off from the tray).
+DND_UNTIL="2099,1,1,0,0,0"
+
+kde_write() {
+	[[ "$HAVE_KWIN_CONFIG" == 1 ]] || return 0
+	sudo -u "$ARCADE_USER" kwriteconfig6 --file "$1" --group "$2" --key "$3" "$4"
+}
+
+echo
+echo "Silencing desktop notifications (permanent Do Not Disturb)..."
+kde_write plasmanotifyrc DoNotDisturb Until "$DND_UNTIL"
+kde_write plasmanotifyrc DoNotDisturb NotificationSoundsMuted true
+kde_write plasmanotifyrc Notifications CriticalInDndMode false
+kde_write plasmanotifyrc Notifications LowPriorityPopups false
+# File-transfer and other progress popups are a separate switch from DND.
+kde_write plasmanotifyrc Jobs InNotifications false
+if [[ "$HAVE_KWIN_CONFIG" == 0 ]]; then
+	echo "warning: kwriteconfig6 not found - notifications are NOT silenced." >&2
+	echo "         Turn on Do Not Disturb by hand, and in System Settings >" >&2
+	echo "         Notifications turn off 'Show critical notifications'." >&2
+fi
+
+# Bazzite also pops "announcement" notifications at login from an XDG
+# autostart entry. DND would swallow them, but there is no reason to run it
+# on a kiosk; a Hidden=true entry of the same name in the user's autostart
+# dir is the standard per-user way to switch a system autostart off.
+ANNOUNCE_DESKTOP=bazzite-announcement.desktop
+if [[ -f "/etc/xdg/autostart/$ANNOUNCE_DESKTOP" ]]; then
+	sudo -u "$ARCADE_USER" mkdir -p "$ARCADE_HOME/.config/autostart"
+	sudo -u "$ARCADE_USER" tee "$ARCADE_HOME/.config/autostart/$ANNOUNCE_DESKTOP" > /dev/null <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Bazzite Announcements
+Hidden=true
+EOF
+	echo "  disabled Bazzite login announcements"
 fi
 
 echo
@@ -239,7 +362,10 @@ echo "Done."
 echo "  keymap dir   : $KEYMAP_DIR (group $GROUP, group-writable)"
 echo "  games dir    : $GAMES_DIR"
 echo "  cursor theme : $CURSOR_THEME_DIR"
+echo "  cursor hide  : KWin hides its own after ${CURSOR_HIDE_SECONDS}s idle"
 echo "  kwin focus   : stealing prevention = $FSP_LEVEL (none)"
+echo "  reboot       : weekly, Saturday 02:00 ($REBOOT_UNIT.timer)"
+echo "  notifications: silenced (Do Not Disturb until 2099, criticals included)"
 echo
 echo "Group membership only applies to new logins - log $ARCADE_USER out and"
 echo "back in (or reboot) before starting the launcher."

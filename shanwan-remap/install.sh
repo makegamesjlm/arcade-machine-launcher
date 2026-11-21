@@ -3,6 +3,9 @@ set -e
 
 INSTALL_DIR="/opt/shanwan-remap"
 VENV_DIR="$INSTALL_DIR/venv"
+# Private interpreter the venv is built on - see step 2 for why.
+PYTHON_DIR="$INSTALL_DIR/python"
+PYTHON_VERSION="3.14"
 BIN_DIR="/usr/local/bin"
 
 echo "=== shanwan-remap v2 installer ==="
@@ -41,11 +44,63 @@ mkdir -p "$INSTALL_DIR"
 rm -rf "$INSTALL_DIR/src"
 cp -r . "$INSTALL_DIR/src"
 
-# Create virtual environment
-echo "[2/5] Setting up Python virtual environment..."
-python3 -m venv "$VENV_DIR"
-"$VENV_DIR/bin/pip" install --upgrade pip 2>/dev/null || true
-"$VENV_DIR/bin/pip" install "$INSTALL_DIR/src"
+# Create virtual environment on a pinned, private Python.
+#
+# The venv must NOT be built on the system python3. A venv is not
+# self-contained: it points at the interpreter and standard library it was
+# made with, and on Bazzite those come with the OS image. An automatic image
+# update that bumps the Python minor version (3.14 -> 3.15 in Nov 2026) leaves
+# the venv's packages under the old version's site-packages, and the service
+# dies on `ModuleNotFoundError: No module named 'shanwan_remap'` - taking the
+# white button with it. `python3 -m venv --copies` does not help, because the
+# standard library still lives in the image.
+#
+# Instead, uv downloads a standalone CPython into $PYTHON_DIR, which OS updates
+# never touch.
+#
+# Re-running this installer downloads nothing unless something is missing or
+# out of date:
+#   - Python is fetched only when there is none yet, or when PYTHON_VERSION
+#     has been changed. Only then is uv bootstrapped, in a throwaway venv made
+#     with the system python3.
+#   - The venv is rebuilt only when it is missing or not on the pinned Python
+#     (e.g. one left over from an install that used the system python3).
+#   - The package is then reinstalled from the local source. Dependencies that
+#     are already installed are not fetched again, and the build uses the
+#     venv's own setuptools (--no-build-isolation), so nothing is downloaded
+#     for the build either.
+echo "[2/5] Setting up pinned Python $PYTHON_VERSION and virtual environment..."
+PYTHON_MARKER="$PYTHON_DIR/pinned-python"
+PINNED_PYTHON=""
+if [ -f "$PYTHON_MARKER" ]; then
+    PINNED_PYTHON="$(cat "$PYTHON_MARKER")"
+fi
+if [ -n "$PINNED_PYTHON" ] && "$PINNED_PYTHON" -c \
+        "import sys; sys.exit('%d.%d' % sys.version_info[:2] != '$PYTHON_VERSION')" 2>/dev/null; then
+    echo "      Python $PYTHON_VERSION already installed; not downloading."
+else
+    echo "      Downloading Python $PYTHON_VERSION..."
+    UV_BOOTSTRAP="$(mktemp -d)"
+    trap 'rm -rf "$UV_BOOTSTRAP"' EXIT
+    python3 -m venv "$UV_BOOTSTRAP"
+    "$UV_BOOTSTRAP/bin/pip" install --quiet --disable-pip-version-check uv
+    UV="$UV_BOOTSTRAP/bin/uv"
+    export UV_PYTHON_INSTALL_DIR="$PYTHON_DIR"
+    "$UV" python install --no-bin "$PYTHON_VERSION"
+    PINNED_PYTHON="$("$UV" python find --managed-python "$PYTHON_VERSION")"
+    echo "$PINNED_PYTHON" > "$PYTHON_MARKER"
+fi
+echo "      Using $PINNED_PYTHON"
+
+if [ "$(readlink -f "$VENV_DIR/bin/python" 2>/dev/null)" = "$(readlink -f "$PINNED_PYTHON")" ]; then
+    echo "      Reusing existing virtual environment."
+else
+    echo "      Creating virtual environment..."
+    rm -rf "$VENV_DIR"
+    "$PINNED_PYTHON" -m venv "$VENV_DIR"
+    "$VENV_DIR/bin/pip" install --disable-pip-version-check setuptools
+fi
+"$VENV_DIR/bin/pip" install --disable-pip-version-check --no-build-isolation "$INSTALL_DIR/src"
 echo "      Installed to $INSTALL_DIR"
 
 # Create wrapper scripts

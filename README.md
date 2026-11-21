@@ -118,7 +118,11 @@ directory writable by a new `arcade` group, adds your user to it, seeds a
 starting keymap, installs the transparent cursor theme, and turns off KWin's
 focus stealing prevention so the launcher can raise its own window over a
 running game (see "Window activation" below — the system overlay does not work
-without it). Log out and back in afterwards so the group membership takes
+without it). It also installs `arcade-weekly-reboot.timer`, a system timer that
+reboots the whole cabinet every Saturday at 02:00 local time (check it with
+`systemctl list-timers arcade-weekly-reboot.timer`), and silences desktop
+notifications for good — Do Not Disturb with critical notifications included,
+so Bazzite's update nags never draw over a game. Log out and back in afterwards so the group membership takes
 effect.
 
 The launcher then writes `/etc/shanwan-remap/keymap.json` directly, with no
@@ -127,6 +131,19 @@ followed by a rename — so the polling service never reads a half-written file.
 
 Then build and install the service: [systemd/README-service.md](systemd/README-service.md).
 
+### Remote access
+
+The cabinet is reachable over Tailscale as `jlmarcade-1`, so the connecting
+machine must be on the same tailnet.
+
+- **Remote desktop:** connect an RDP client (Windows: `mstsc`) to
+  `jlmarcade-1:3389`. This is KDE's built-in RDP server, set up once by hand in
+  System Settings > Remote Desktop, with its own username and password.
+  Moving the remote mouse shows the cursor on the cabinet screen.
+- **SSH:** `ssh makegamesjlm@jlmarcade-1`. This goes through Tailscale SSH
+  (`tailscale set --ssh`), not the system `sshd`, which stays disabled — so
+  it only works over the tailnet.
+
 ## Controls
 
 | Input | Action |
@@ -134,13 +151,31 @@ Then build and install the service: [systemd/README-service.md](systemd/README-s
 | Joystick / d-pad | Move around the grid |
 | Bottom-right button | Play the selected game, or confirm in the system overlay |
 | Bottom-middle button | Dismiss an error, or Continue in the system overlay |
-| Top-left / Top-right button | System volume down / up |
-| Top-middle button | Mute toggle |
 | White button | Open the system overlay |
 
-Either controller can drive the menu. Volume, mute, and the plain shortcuts
-above all work only while the grid is the active surface — not while a game
-is running, the system overlay is open, or attract mode is showing.
+Either controller can drive the menu. The plain shortcuts above work only while
+the grid is the active surface — not while a game is running, the system
+overlay is open, or attract mode is showing. The top buttons do nothing in the
+launcher: volume and mute are changed only from the system overlay's volume
+row (white button), so nobody changes them by accident from the grid.
+
+### Keyboard (remote desktop testing)
+
+The cabinet has no keyboard, but every launcher control has a key so it can be
+driven over RDP:
+
+| Key | Same as |
+| --- | --- |
+| Arrow keys | Joystick / d-pad |
+| Enter | Bottom-right button |
+| Escape | Bottom-middle button |
+| F1 | White button — tap opens/continues the overlay, hold for `hard_reset_seconds` is a hard reset |
+| F3 | Rescan the games folder |
+| Any key except F1 | Wakes attract mode (F1 wakes it on release, like a white tap) |
+
+Keys reach the launcher only while its window has focus, so F1 cannot open the
+overlay while a game is running in front. Losing focus while F1 is held
+cancels the hold rather than resetting.
 
 ## What happens on select
 
@@ -234,6 +269,8 @@ on those. Copy [`config.example.json`](config.example.json) to get started.
 | `send_pause_delay_seconds` | 0.25 | Delay after resuming a game before "Send pause" injects the white press |
 | `failed_message_seconds` | 15 | How long a "could not start" message waits before returning to the grid |
 | `hard_reset_seconds` | 5 | How long the white button must be held to hard-reset (close any game + restart the launcher) |
+| `splash_fps` | 60 | Frame rate the launch splash's PNG frames play at |
+| `splash_seconds` | 4 | Minimum length of the launch splash; its repeating middle is looped to get closest to this |
 
 Each value must be a positive number. Anything missing, mistyped, or out of
 range falls back to its default and is shown as a `config:` problem on the grid
@@ -254,6 +291,57 @@ Pressing any button always wakes it back to the launcher - the menu, or the
 held-menu if a game is parked - never back into a game. If a game was
 running when attract started, it stays alive, held, in the background.
 
+## Launch splash
+
+Every time a game is started (not when a held game is resumed) the JLM Arcade
+splash animation plays full screen, straight from the artist's PNG frames in
+`~/Nextcloud/Arcade/arcade_splash.zip` (override with `--splash-frames` /
+`ARCADE_SPLASH_FRAMES`; a folder of PNGs works too). The
+game loads underneath it, so the splash is all the player waits through:
+
+1. The splash starts the instant a game is picked, wiping in over the grid.
+   There is no "Applying controller mapping" card: the game's keymap is
+   written and its process started straight away, behind the splash.
+2. When the game's window comes up (it takes focus from the launcher), the
+   launcher is raised straight back over it, and the game carries on loading
+   unseen. It is never frozen.
+3. The animation's middle stretch loops while the game loads: at least
+   enough times to make the splash `splash_seconds` long (4 s by default),
+   and for as long after that as the game's window still has not come up - up
+   to 8 s from the click, after which it goes ahead anyway. It always leaves
+   the loop at the end of a cycle, then plays on to its last opaque frame.
+4. With the game underneath, the wipe-out plays and uncovers it. KWin is then
+   asked (a one-off KWin script over DBus, via `gdbus`) to bring the game's
+   window back in front for input focus. The launcher is *not* minimized, so it
+   stays directly underneath, exactly as after a plain launch, and is what
+   shows the instant the game quits. If KWin has not done it within 2 s, the
+   launcher falls back to minimizing itself the way **Continue** does, which
+   always works but shows the desktop for a moment when the game later quits.
+
+Controller input to the game is blocked from the click until it is revealed
+(and never for less than the remapper's reload window, `keymap_reload_seconds`,
+so the game never sees the launcher's mapping). White and attract mode are
+ignored for those few seconds, which count as part of the session's play time.
+A missing or unreadable zip just skips the splash (and brings back the old
+"Starting" card), as does a launch in the first few seconds after the launcher
+starts, while the frames are still loading.
+
+The frames are taken in name order and played at `splash_fps` (see Timings).
+The launcher finds the stretch that repeats a short cycle (in the current
+artwork, frames 78-101 - four images held six frames each - repeated ten
+times) and loops that cycle to set the length: the rest of the animation is
+about 2.65 s at 60 fps, and each cycle adds 0.4 s. Everything after the last
+fully opaque frame is the wipe-out that uncovers the game. New artwork needs no
+settings: with no repeating stretch it simply plays straight through and holds
+on its last opaque frame until the game is ready. Transparency is the PNGs' own. The
+launcher decodes them once at startup on a background thread and keeps them on
+the GPU: identical frames are stored once, and each is block-compressed (DXT5)
+or, if the build cannot do that, halved and drawn back up pixel-sharp - about
+240 MB either way for the current artwork.
+
+The launcher reads the file at startup, so restart it (or hold white for a
+hard reset) to pick up a new one.
+
 ## Idle kill
 
 After `idle_kill_seconds` (30 minutes by default) with no input at all,
@@ -262,18 +350,93 @@ unattended overnight. Nothing else
 happens at that mark: no display blanking, and the attract video (if already
 looping) keeps looping right through it.
 
+## Analytics
+
+Every game session is recorded into `~/Nextcloud/Arcade/analytics/` (override
+with `--analytics-dir` / `ARCADE_ANALYTICS_DIR`), beside `config.json` and the
+attract video - so the data leaves the cabinet by the same route games arrive
+on it. No server and no network code. The folder is created on first write.
+
+```
+~/Nextcloud/Arcade/analytics/
+├── 2026-09.jsonl   one JSON object per line, rotated monthly
+└── summary.txt     plain-text totals, rewritten after every session
+```
+
+`summary.txt` is the one to read: plays per game, total plays, typical session
+length, how sessions ended, and a "needs attention" block listing games that
+failed to launch or that players keep pausing out of. It is derived from the
+JSONL on every session close, so it can be deleted at any time and will be
+rebuilt from the logs.
+
+The JSONL is the detail underneath it - two lines per session:
+
+```json
+{"time":"2026-09-01T18:22:04Z","uptime_ms":19834,"boot":"a3f1c2","event":"game_open","game":"neon-drift","name":"Neon Drift"}
+{"time":"2026-09-01T18:28:56Z","uptime_ms":431201,"boot":"a3f1c2","event":"game_close","game":"neon-drift","name":"Neon Drift","reason":"quit","exit_code":0,"wall_seconds":412.3,"active_seconds":388.1,"hold_count":1}
+```
+
+`wall_seconds` is how long the game was open; `active_seconds` subtracts every
+stretch it spent frozen in the background behind the system overlay or the
+attract loop (see "Held games"), so it is the real playtime. `hold_count` is
+how many times that happened. `uptime_ms` and `boot` order events within a run
+even if the clock jumps when NTP settles after boot.
+
+`reason` is the useful field - how the session ended:
+
+| `reason` | What happened |
+| --- | --- |
+| `quit` | The game exited on its own. On a cabinet, the player chose to leave |
+| `exited_nonzero` | Exited with an error code |
+| `crashed_early` | Started, then died inside the crash window |
+| `launch_failed` | Never ran: bad keymap, or the binary would not execute |
+| `closed_from_overlay` | Closed from the white-button menu |
+| `replaced` | Closed to make room for a different game |
+| `idle_killed` | Reaped by the idle kill - nobody was there |
+| `vanished` | A held game's process disappeared on its own |
+| `hard_reset` | Open when the white button forced a restart |
+| `launcher_exit` | Open when the launcher quit for any other reason |
+
+A `game_open` with no matching `game_close` means the cabinet lost power
+mid-session; the summary skips those rather than guessing at them.
+
+Recording can never take the cabinet down. A folder that cannot be written
+disables logging for the run and reports itself on the amber problem strip
+alongside scan and config trouble.
+
 ## Cursor hiding
 
 There is no mouse during arcade play, but one may still get plugged in for
-maintenance, so this is scoped to the launcher and games only, not the whole
-desktop session. `setup-arcade.sh` installs a fully transparent Xcursor
-theme (`arcade-blank`) for the arcade user; only `XCURSOR_THEME=arcade-blank`
-in the launcher's own environment (and every game's, inherited through it)
-points at it. A file manager or terminal opened from the normal desktop
-session never sees that variable and keeps the system's normal cursor. See
-`setup-arcade.sh`'s "cursor hiding" section for why this was chosen over
-routing games through a nested compositor such as Gamescope (tried once,
-reverted; see git history).
+maintenance, so none of this blinds the desktop session permanently. It takes
+two settings, because a cursor on screen can come from two different places.
+
+**Cursors a client draws.** `setup-arcade.sh` installs a fully transparent
+Xcursor theme (`arcade-blank`) for the arcade user; only
+`XCURSOR_THEME=arcade-blank` in the launcher's own environment (and every
+game's, inherited through it) points at it. A file manager or terminal opened
+from the normal desktop session never sees that variable and keeps the
+system's normal cursor. See `setup-arcade.sh`'s "cursor hiding" section for
+why this was chosen over routing games through a nested compositor such as
+Gamescope (tried once, reverted; see git history).
+
+**The cursor KWin draws itself.** The theme above cannot touch this one, and on
+Wayland the compositor owns the pointer until a surface claims it — so from the
+moment a game's window is mapped until the game gets far enough into its own
+startup to set a cursor for it, KWin renders its default arrow. That gap is the
+arrow that used to flash on screen on every launch. No client-side setting can
+reach it: not the theme, and not Godot's `MOUSE_MODE_HIDDEN` in
+`scripts/main.gd`, which only ever applied to the launcher's own window.
+
+KWin's built-in **Hide Cursor** effect (Plasma 6.2+) is the one thing that can.
+`setup-arcade.sh` enables it and sets a five second inactivity timeout, so the
+compositor stops rendering a pointer at all after five seconds with no real
+pointer input — on a cabinet with no mouse, that means a few seconds after
+login and then forever, covering the mapping gap that nothing else could. It
+does not blind maintenance the way the session-wide cursor theme an earlier
+version of the script set did: the cursor returns the instant a plugged-in
+mouse moves, and only fades again after the same few seconds of it sitting
+still. Cabinet buttons cannot bring it back — keyboard input in that effect
+only ever hides the cursor, never shows it.
 
 ## Window activation
 
@@ -327,6 +490,12 @@ sitting on top of a running, invisible game. Here minimizing is free: the
 game's window is already mapped directly underneath, so it is what appears the
 instant the launcher goes away — no gap, no desktop flash.
 
+The launch splash is the one place a window that already exists is brought
+forward *without* minimizing: it asks KWin to activate the game's window
+instead (`GameLauncher.activate_game_window()`, see "Launch splash"), so the
+launcher is still mapped underneath when the game quits. Continue still
+minimizes.
+
 That a client cannot un-minimize itself on Wayland (`xdg-shell` has
 `xdg_toplevel.set_minimized` and no matching unset) does not matter: the
 compositor restores the window as part of honouring the activation request,
@@ -345,9 +514,13 @@ The launcher can run on a desktop against fake games. Paths are overridable:
 godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json
 ```
 
-`--games-dir`, `--keymap-path`, `--attract-video`, `--config-path` and
-`--no-fullscreen` also read from `ARCADE_GAMES_DIR`, `ARCADE_KEYMAP_PATH`,
-`ARCADE_ATTRACT_VIDEO` and `ARCADE_CONFIG_PATH`.
+`--games-dir`, `--keymap-path`, `--attract-video`, `--splash-frames`,
+`--config-path` and `--analytics-dir` also read from `ARCADE_GAMES_DIR`,
+`ARCADE_KEYMAP_PATH`, `ARCADE_ATTRACT_VIDEO`, `ARCADE_SPLASH_FRAMES`,
+`ARCADE_CONFIG_PATH` and `ARCADE_ANALYTICS_DIR`. Point `--analytics-dir` somewhere temporary on a dev
+box so test runs do not land in the real log; sessions started with
+`--simulate-launch` are tagged `"simulated": true` and are ignored by the
+summary either way.
 
 The system overlay, attract mode, and held games all depend on
 shanwan-remap's control channel (see shanwan-remap/README.md), which has
@@ -365,7 +538,7 @@ godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=dev/keymap
 ```
 
 This runs the real UI and keymap-writing flow without attempting to execute the
-Linux fixture binaries. Arrow keys navigate and F5 refreshes. Enter starts a
+Linux fixture binaries. Arrow keys navigate and F3 refreshes. Enter starts a
 simulated game; press Escape to finish it successfully. Shift+Enter simulates a
 failure before the game starts, and Ctrl+Enter simulates a game that starts and
 then crashes immediately.
@@ -423,15 +596,18 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/arcade_bus.gd` | Client for shanwan-remap's control channel (autoload `Bus`) |
 | `scripts/input_router.gd` | Feeds control-channel events into Godot's Input while blocked |
 | `scripts/idle_tracker.gd` | Attract/idle-kill thresholds (autoload `Idle`) |
+| `scripts/analytics.gd` | Per-session open/close event log (autoload `Analytics`) |
+| `scripts/analytics_summary.gd` | Renders `summary.txt` from those logs |
 | `scripts/session_controller.gd` | State machine for the system overlay, attract mode, held games |
 | `scripts/system_overlay.gd`, `scripts/attract_screen.gd` | The two on top of everything else |
+| `scripts/splash_screen.gd` | The splash animation played on every game launch |
 | `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
-| `scripts/main.gd` | Grid, navigation, the launch takeover and the running tile's mark, volume HUD |
-| `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
-| `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor theme |
+| `scripts/main.gd` | Grid, navigation, the launch takeover and the running tile's mark |
+| `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn`, `splash.tscn` |
+| `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor hiding, KWin settings, weekly reboot timer, notifications off |
 | `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |
 | `scripts/install-git-hooks.sh`, `.ps1` | Enables the build-number pre-commit hook |
-| `systemd/` | User unit and install notes |
+| `systemd/` | Launcher user unit, weekly reboot system timer, install notes |
 | `theme/fonts/` | Handjet font variations used by the UI |
 | `assets/fonts/` | Bundled Handjet variable font and its license |
 

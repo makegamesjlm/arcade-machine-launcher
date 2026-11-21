@@ -31,11 +31,6 @@ const OVERLAY_FADE_SECONDS := 0.22
 ## remapping, starting - takes the whole screen instead (see _on_preparing).
 const STATUS_RUNNING := "RUNNING"
 
-## How long the volume bar lingers at full opacity after the last change before
-## it fades back out, and how long that fade takes.
-const VOLUME_VISIBLE_SECONDS := 1.4
-const VOLUME_FADE_SECONDS := 0.22
-
 var _games: Array[GameEntry] = []
 var _cards: Array[GameCard] = []
 var _selected := -1
@@ -50,7 +45,6 @@ var _session: SessionController
 var _input_locked := false
 var _overlay_tween: Tween
 var _volume: VolumeControl
-var _volume_tween: Tween
 ## Slides the row by one game when the window scrolls; killed and restarted on
 ## each move. See _scroll_to_first.
 var _row_tween: Tween
@@ -86,10 +80,6 @@ var _running_game_id := ""
 @onready var _overlay: ColorRect = %Overlay
 @onready var _overlay_title: Label = %OverlayTitle
 @onready var _overlay_sub: Label = %OverlaySub
-@onready var _volume_bar: PanelContainer = %VolumeBar
-@onready var _volume_label: Label = %VolumeLabel
-@onready var _volume_progress: ProgressBar = %VolumeProgress
-@onready var _volume_value: Label = %VolumeValue
 @onready var _session_node: SessionController = %SessionController
 
 
@@ -127,6 +117,7 @@ func _ready() -> void:
 	_launcher.started.connect(_on_started)
 	_launcher.finished.connect(_on_finished)
 	_launcher.failed.connect(_on_failed)
+	Analytics.bind(_launcher)
 
 	_volume = VolumeControl.new()
 
@@ -135,7 +126,7 @@ func _ready() -> void:
 
 	if Cfg.simulate_launch:
 		_hints.text = ("Arrows: Browse     Enter: Play     Shift+Enter: Fail     "
-			+ "Ctrl+Enter: Crash     -/=: Volume     M: Mute     F5: Refresh")
+			+ "Ctrl+Enter: Crash     F5: Refresh")
 
 	refresh()
 
@@ -172,6 +163,11 @@ func refresh() -> void:
 	# the cabinet rather than only in the journal.
 	for problem in Cfg.config_problems:
 		_scan_problems.append("config: " + problem)
+	# Play data quietly not being recorded - an unwritable Nextcloud folder, a
+	# summary that will not render - is exactly the sort of thing nobody notices
+	# until they go looking for the numbers, so it shows on the same strip.
+	for problem in Analytics.problems:
+		_scan_problems.append("analytics: " + problem)
 	_scan_problems.append_array(result.errors)
 	_scan_problems.append_array(result.warnings())
 
@@ -471,13 +467,9 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# _input_locked already means "the grid is not the active surface" -
-	# PLAYING, the system overlay, or attract mode - which is exactly when
-	# these raw volume shortcuts must not also fire independently of
-	# whichever UI (the game itself, or the overlay's own volume row) is
-	# supposed to own them right now.
-	if not _input_locked and _handle_volume(event):
-		return
+	# Volume is deliberately not handled here: it lives only in the system
+	# overlay's volume row, so the top buttons stay free for games and a
+	# player can never change it by accident from the grid.
 	if _input_locked:
 		if event.is_action_pressed("nav_back") and _launcher.finish_simulated_session():
 			get_viewport().set_input_as_handled()
@@ -488,43 +480,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("nav_refresh"):
 		get_viewport().set_input_as_handled()
 		refresh()
-
-
-## Routes the volume/mute buttons. Returns true when the event was one of them,
-## so the caller can stop before it reaches selection or navigation.
-func _handle_volume(event: InputEvent) -> bool:
-	if event.is_action_pressed("volume_up"):
-		_apply_volume(_volume.change(1))
-	elif event.is_action_pressed("volume_down"):
-		_apply_volume(_volume.change(-1))
-	elif event.is_action_pressed("volume_mute"):
-		_apply_volume(_volume.toggle_mute())
-	else:
-		return false
-	get_viewport().set_input_as_handled()
-	return true
-
-
-func _apply_volume(state: Dictionary) -> void:
-	var muted: bool = state.get("muted", false)
-	var percent := int(round(float(state.get("volume", 0.0)) * 100.0))
-	_volume_progress.value = percent
-	_volume_label.text = "MUTED" if muted else "VOLUME"
-	_volume_value.text = "%d%%" % percent
-	_flash_volume_bar()
-
-
-## Fades the bar in, holds it, then fades it out. Called on every change, so a
-## fresh press cancels the pending fade and restarts the timer.
-func _flash_volume_bar() -> void:
-	_volume_bar.visible = true
-	if _volume_tween != null and _volume_tween.is_running():
-		_volume_tween.kill()
-	_volume_tween = create_tween()
-	_volume_tween.tween_property(_volume_bar, "modulate:a", 1.0, VOLUME_FADE_SECONDS)
-	_volume_tween.tween_interval(VOLUME_VISIBLE_SECONDS)
-	_volume_tween.tween_property(_volume_bar, "modulate:a", 0.0, VOLUME_FADE_SECONDS)
-	_volume_tween.tween_callback(func() -> void: _volume_bar.visible = false)
 
 
 func _simulation_outcome_for(event: InputEvent) -> int:
@@ -559,9 +514,16 @@ func _activate(simulated_outcome: int = GameLauncher.SimulatedOutcome.SUCCESS) -
 ## as an invitation to keep pressing buttons. Once the game is actually up
 ## (_on_started) the screen goes back to the grid, and the tile carries it
 ## from there.
+##
+## With a launch splash none of that card is shown: the splash itself starts
+## the moment the game is picked and covers the whole launch, keymap and
+## loading included - see SessionController._run_launch_splash(). Input is
+## locked all the same.
 func _on_preparing(game: GameEntry) -> void:
 	_input_locked = true
 	_repeat_countdown.clear()
+	if _session.runs_launch_splash():
+		return
 	_overlay_title.text = game.name
 	_overlay_sub.text = ("Applying controller mapping..." if not game.keymap.is_empty()
 		else "Starting...")
@@ -569,7 +531,7 @@ func _on_preparing(game: GameEntry) -> void:
 
 
 func _on_started(game: GameEntry) -> void:
-	_show_overlay(false)
+	_show_overlay(false)  # no-op with a launch splash: it was never shown
 	set_running_game(game)
 
 
@@ -579,8 +541,11 @@ func _on_finished(_game: GameEntry, _exit_code: int) -> void:
 	await get_tree().create_timer(RETURN_LOCKOUT_SECONDS).timeout
 	# Vetoed (stays locked) if SessionController's own overlay or attract
 	# mode has since taken over the screen - e.g. the idle-kill closing a
-	# game while attract is already looping right through it.
-	set_ui_locked(false)
+	# game while attract is already looping right through it. Also skipped
+	# when this game was closed to make room for another (request_play()):
+	# that launch is already under way, and owns the lock.
+	if not _launcher.is_busy:
+		set_ui_locked(false)
 	# A game may have been installed or removed while we were away.
 	refresh()
 

@@ -8,12 +8,13 @@ extends CanvasLayer
 ## ANY button as the bottom bar promises, not just the ones bound to a
 ## Godot action.
 ##
-## The one thing this handles directly is a fallback wake for when the
-## control channel is unavailable altogether (Windows dev, or a cabinet
-## whose remapper is not running) - in that world Bus never fires at all,
-## so this listens for a real Godot input event instead. Harmless overlap
-## on the cabinet: whichever path fires first wins, and SessionController's
-## own state check makes the other a no-op.
+## The things this handles directly are keyboard wakes (always - the
+## cabinet has no keyboard, so a key press means someone testing over remote
+## desktop) and a joypad fallback wake for when the control channel is
+## unavailable altogether (Windows dev, or a cabinet whose remapper is not
+## running) - in that world Bus never fires at all, so this listens for a
+## real Godot input event instead. Harmless overlap: whichever path fires
+## first wins, and stop() hiding this makes the other a no-op here.
 
 signal woken
 
@@ -61,15 +62,28 @@ func _use_fallback() -> void:
 	_fallback.show()
 
 
-## Dev-mode / no-remapper fallback only - see the class doc comment. Any key
-## or joypad press wakes it; a real cabinet press is caught by
-## SessionController via Bus.button well before this would ever fire.
+## Any keyboard key wakes it, always - including on the cabinet, so it can be
+## woken over remote desktop. The one exception is the white stand-in
+## (`system_button`), which SessionController turns into a white tap on
+## release, and that wakes attract the same way the real white button does.
+## Waking here on its press would leave the release to open the overlay over
+## the freshly woken menu.
+##
+## Joypad input only counts as the dev-mode / no-remapper fallback (see the
+## class doc comment). On the cabinet a real button press is caught by
+## SessionController via Bus.button.
 func _input(event: InputEvent) -> void:
-	if not visible or Bus.is_live:
+	if not visible:
+		return
+	if event is InputEventKey:
+		if event.is_pressed() and not event.is_action("system_button"):
+			woken.emit()
+		return
+	if Bus.is_live:
 		return
 	if event is InputEventJoypadMotion:
 		if absf(event.axis_value) > 0.5:
 			woken.emit()
 		return
-	if (event is InputEventKey or event is InputEventJoypadButton) and event.is_pressed():
+	if event is InputEventJoypadButton and event.is_pressed():
 		woken.emit()
