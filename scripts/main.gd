@@ -514,9 +514,16 @@ func _activate(simulated_outcome: int = GameLauncher.SimulatedOutcome.SUCCESS) -
 ## as an invitation to keep pressing buttons. Once the game is actually up
 ## (_on_started) the screen goes back to the grid, and the tile carries it
 ## from there.
+##
+## With a launch splash none of that card is shown: the splash itself starts
+## the moment the game is picked and covers the whole launch, keymap and
+## loading included - see SessionController._run_launch_splash(). Input is
+## locked all the same.
 func _on_preparing(game: GameEntry) -> void:
 	_input_locked = true
 	_repeat_countdown.clear()
+	if _session.runs_launch_splash():
+		return
 	_overlay_title.text = game.name
 	_overlay_sub.text = ("Applying controller mapping..." if not game.keymap.is_empty()
 		else "Starting...")
@@ -524,7 +531,7 @@ func _on_preparing(game: GameEntry) -> void:
 
 
 func _on_started(game: GameEntry) -> void:
-	_show_overlay(false)
+	_show_overlay(false)  # no-op with a launch splash: it was never shown
 	set_running_game(game)
 
 
@@ -534,8 +541,11 @@ func _on_finished(_game: GameEntry, _exit_code: int) -> void:
 	await get_tree().create_timer(RETURN_LOCKOUT_SECONDS).timeout
 	# Vetoed (stays locked) if SessionController's own overlay or attract
 	# mode has since taken over the screen - e.g. the idle-kill closing a
-	# game while attract is already looping right through it.
-	set_ui_locked(false)
+	# game while attract is already looping right through it. Also skipped
+	# when this game was closed to make room for another (request_play()):
+	# that launch is already under way, and owns the lock.
+	if not _launcher.is_busy:
+		set_ui_locked(false)
 	# A game may have been installed or removed while we were away.
 	refresh()
 

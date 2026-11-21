@@ -6,5 +6,7 @@
   "close_grace_seconds": 2.0,
   "send_pause_delay_seconds": 0.25,
   "failed_message_seconds": 15,
-  "hard_reset_seconds": 5
+  "hard_reset_seconds": 5,
+  "splash_fps": 60,
+  "splash_seconds": 4
 }

@@ -1,0 +1,20 @@
+[gd_scene load_steps=2 format=3 uid="uid://bsplash0arcade01"]
+
+[ext_resource type="Script" path="res://scripts/splash_screen.gd" id="1_splash"]
+
+[node name="SplashScreen" type="CanvasLayer"]
+layer = 50
+script = ExtResource("1_splash")
+
+[node name="SplashFrame" type="TextureRect" parent="."]
+unique_name_in_owner = true
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 0

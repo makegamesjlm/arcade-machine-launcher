@@ -269,6 +269,8 @@ on those. Copy [`config.example.json`](config.example.json) to get started.
 | `send_pause_delay_seconds` | 0.25 | Delay after resuming a game before "Send pause" injects the white press |
 | `failed_message_seconds` | 15 | How long a "could not start" message waits before returning to the grid |
 | `hard_reset_seconds` | 5 | How long the white button must be held to hard-reset (close any game + restart the launcher) |
+| `splash_fps` | 60 | Frame rate the launch splash's PNG frames play at |
+| `splash_seconds` | 4 | Minimum length of the launch splash; its repeating middle is looped to get closest to this |
 
 Each value must be a positive number. Anything missing, mistyped, or out of
 range falls back to its default and is shown as a `config:` problem on the grid
@@ -288,6 +290,57 @@ is specified in `screensaver-brief.md`.
 Pressing any button always wakes it back to the launcher - the menu, or the
 held-menu if a game is parked - never back into a game. If a game was
 running when attract started, it stays alive, held, in the background.
+
+## Launch splash
+
+Every time a game is started (not when a held game is resumed) the JLM Arcade
+splash animation plays full screen, straight from the artist's PNG frames in
+`~/Nextcloud/Arcade/arcade_splash.zip` (override with `--splash-frames` /
+`ARCADE_SPLASH_FRAMES`; a folder of PNGs works too). The
+game loads underneath it, so the splash is all the player waits through:
+
+1. The splash starts the instant a game is picked, wiping in over the grid.
+   There is no "Applying controller mapping" card: the game's keymap is
+   written and its process started straight away, behind the splash.
+2. When the game's window comes up (it takes focus from the launcher), the
+   launcher is raised straight back over it, and the game carries on loading
+   unseen. It is never frozen.
+3. The animation's middle stretch loops while the game loads: at least
+   enough times to make the splash `splash_seconds` long (4 s by default),
+   and for as long after that as the game's window still has not come up - up
+   to 8 s from the click, after which it goes ahead anyway. It always leaves
+   the loop at the end of a cycle, then plays on to its last opaque frame.
+4. With the game underneath, the wipe-out plays and uncovers it. KWin is then
+   asked (a one-off KWin script over DBus, via `gdbus`) to bring the game's
+   window back in front for input focus. The launcher is *not* minimized, so it
+   stays directly underneath, exactly as after a plain launch, and is what
+   shows the instant the game quits. If KWin has not done it within 2 s, the
+   launcher falls back to minimizing itself the way **Continue** does, which
+   always works but shows the desktop for a moment when the game later quits.
+
+Controller input to the game is blocked from the click until it is revealed
+(and never for less than the remapper's reload window, `keymap_reload_seconds`,
+so the game never sees the launcher's mapping). White and attract mode are
+ignored for those few seconds, which count as part of the session's play time.
+A missing or unreadable zip just skips the splash (and brings back the old
+"Starting" card), as does a launch in the first few seconds after the launcher
+starts, while the frames are still loading.
+
+The frames are taken in name order and played at `splash_fps` (see Timings).
+The launcher finds the stretch that repeats a short cycle (in the current
+artwork, frames 78-101 - four images held six frames each - repeated ten
+times) and loops that cycle to set the length: the rest of the animation is
+about 2.65 s at 60 fps, and each cycle adds 0.4 s. Everything after the last
+fully opaque frame is the wipe-out that uncovers the game. New artwork needs no
+settings: with no repeating stretch it simply plays straight through and holds
+on its last opaque frame until the game is ready. Transparency is the PNGs' own. The
+launcher decodes them once at startup on a background thread and keeps them on
+the GPU: identical frames are stored once, and each is block-compressed (DXT5)
+or, if the build cannot do that, halved and drawn back up pixel-sharp - about
+240 MB either way for the current artwork.
+
+The launcher reads the file at startup, so restart it (or hold white for a
+hard reset) to pick up a new one.
 
 ## Idle kill
 
@@ -437,6 +490,12 @@ sitting on top of a running, invisible game. Here minimizing is free: the
 game's window is already mapped directly underneath, so it is what appears the
 instant the launcher goes away — no gap, no desktop flash.
 
+The launch splash is the one place a window that already exists is brought
+forward *without* minimizing: it asks KWin to activate the game's window
+instead (`GameLauncher.activate_game_window()`, see "Launch splash"), so the
+launcher is still mapped underneath when the game quits. Continue still
+minimizes.
+
 That a client cannot un-minimize itself on Wayland (`xdg-shell` has
 `xdg_toplevel.set_minimized` and no matching unset) does not matter: the
 compositor restores the window as part of honouring the activation request,
@@ -455,10 +514,10 @@ The launcher can run on a desktop against fake games. Paths are overridable:
 godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=/tmp/keymap.json
 ```
 
-`--games-dir`, `--keymap-path`, `--attract-video`, `--config-path`,
-`--analytics-dir` and `--no-fullscreen` also read from `ARCADE_GAMES_DIR`,
-`ARCADE_KEYMAP_PATH`, `ARCADE_ATTRACT_VIDEO`, `ARCADE_CONFIG_PATH` and
-`ARCADE_ANALYTICS_DIR`. Point `--analytics-dir` somewhere temporary on a dev
+`--games-dir`, `--keymap-path`, `--attract-video`, `--splash-frames`,
+`--config-path` and `--analytics-dir` also read from `ARCADE_GAMES_DIR`,
+`ARCADE_KEYMAP_PATH`, `ARCADE_ATTRACT_VIDEO`, `ARCADE_SPLASH_FRAMES`,
+`ARCADE_CONFIG_PATH` and `ARCADE_ANALYTICS_DIR`. Point `--analytics-dir` somewhere temporary on a dev
 box so test runs do not land in the real log; sessions started with
 `--simulate-launch` are tagged `"simulated": true` and are ignored by the
 summary either way.
@@ -531,9 +590,10 @@ godot --path . --resolution 1920x1080 res://tests/screenshot.tscn -- --no-fullsc
 | `scripts/analytics_summary.gd` | Renders `summary.txt` from those logs |
 | `scripts/session_controller.gd` | State machine for the system overlay, attract mode, held games |
 | `scripts/system_overlay.gd`, `scripts/attract_screen.gd` | The two on top of everything else |
+| `scripts/splash_screen.gd` | The splash animation played on every game launch |
 | `scripts/volume_control.gd` | System volume/mute via `wpctl`/`pactl` |
 | `scripts/main.gd` | Grid, navigation, the launch takeover and the running tile's mark |
-| `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn` |
+| `scenes/` | `main.tscn`, `game_card.tscn`, `system_overlay.tscn`, `attract.tscn`, `splash.tscn` |
 | `scripts/setup-arcade.sh` | One-time cabinet permissions, keymap seed, cursor hiding, KWin settings, weekly reboot timer, notifications off |
 | `scripts/install-cabinet.sh` | Runs setup, shanwan-remap install, the build, and the service in order |
 | `scripts/install-git-hooks.sh`, `.ps1` | Enables the build-number pre-commit hook |

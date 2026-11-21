@@ -23,6 +23,12 @@ const DEFAULT_KEYMAP_PATH := "/etc/shanwan-remap/keymap.json"
 ## built-in static screen (see scenes/attract.tscn) rather than showing black.
 const DEFAULT_ATTRACT_VIDEO := "~/Nextcloud/Arcade/attract.ogv"
 
+## The splash animation played every time a game is launched (see
+## scripts/splash_screen.gd): the artist's PNG sequence, with alpha, as a zip
+## (or a folder) of frames in name order. Lives in the synced Arcade folder
+## like the attract video. A missing or unreadable file just skips the splash.
+const DEFAULT_SPLASH_FRAMES := "~/Nextcloud/Arcade/arcade_splash.zip"
+
 ## Operator-tunable timings (see the "Operator-tunable timings" section below)
 ## live in a JSON file next to the attract video, so cabinet behaviour syncs and
 ## updates the same way games and the video do. A missing file is fine - every
@@ -173,6 +179,19 @@ var failed_message_seconds := DEFAULT_FAILED_MESSAGE_SECONDS
 const DEFAULT_HARD_RESET_SECONDS := 5.0
 var hard_reset_seconds := DEFAULT_HARD_RESET_SECONDS
 
+## Frame rate the launch splash's PNG frames play at (see
+## scripts/splash_screen.gd). The screen refreshes at 60, so anything above that
+## drops frames rather than adding smoothness. Not a duration in seconds, but
+## read the same way as the timings below (any positive number).
+const DEFAULT_SPLASH_FPS := 60.0
+var splash_fps := DEFAULT_SPLASH_FPS
+## How long the launch splash lasts, at least: its repeating middle stretch is
+## looped as many whole times as gets closest to this. A game slower to load
+## keeps it looping until its window is up. The current artwork is about 2.65 s
+## without the loop, plus 0.4 s per cycle at 60 fps.
+const DEFAULT_SPLASH_SECONDS := 4.0
+var splash_seconds := DEFAULT_SPLASH_SECONDS
+
 ## The keys config.json may contain, each pointing at its default. Drives both
 ## the unknown-key check and the per-key fallback in _load_config().
 const TIMING_DEFAULTS := {
@@ -184,11 +203,14 @@ const TIMING_DEFAULTS := {
 	"send_pause_delay_seconds": DEFAULT_SEND_PAUSE_DELAY_SECONDS,
 	"failed_message_seconds": DEFAULT_FAILED_MESSAGE_SECONDS,
 	"hard_reset_seconds": DEFAULT_HARD_RESET_SECONDS,
+	"splash_fps": DEFAULT_SPLASH_FPS,
+	"splash_seconds": DEFAULT_SPLASH_SECONDS,
 }
 
 var games_dir: String = DEFAULT_GAMES_DIR
 var keymap_path: String = DEFAULT_KEYMAP_PATH
 var attract_video: String = DEFAULT_ATTRACT_VIDEO
+var splash_frames: String = DEFAULT_SPLASH_FRAMES
 var config_path: String = DEFAULT_CONFIG_PATH
 var analytics_dir: String = DEFAULT_ANALYTICS_DIR
 
@@ -210,8 +232,8 @@ func _ready() -> void:
 	_apply_environment()
 	_apply_command_line()
 	_load_config()
-	print("[cfg] games_dir=%s keymap_path=%s attract_video=%s config_path=%s analytics_dir=%s simulate_launch=%s"
-		% [games_dir, keymap_path, attract_video, config_path, analytics_dir, simulate_launch])
+	print("[cfg] games_dir=%s keymap_path=%s attract_video=%s splash_frames=%s config_path=%s analytics_dir=%s simulate_launch=%s"
+		% [games_dir, keymap_path, attract_video, splash_frames, config_path, analytics_dir, simulate_launch])
 
 
 func _apply_environment() -> void:
@@ -224,6 +246,9 @@ func _apply_environment() -> void:
 	var env_attract := OS.get_environment("ARCADE_ATTRACT_VIDEO")
 	if not env_attract.is_empty():
 		attract_video = env_attract
+	var env_splash := OS.get_environment("ARCADE_SPLASH_FRAMES")
+	if not env_splash.is_empty():
+		splash_frames = env_splash
 	var env_config := OS.get_environment("ARCADE_CONFIG_PATH")
 	if not env_config.is_empty():
 		config_path = env_config
@@ -242,6 +267,8 @@ func _apply_command_line() -> void:
 			keymap_path = arg.trim_prefix("--keymap-path=")
 		elif arg.begins_with("--attract-video="):
 			attract_video = arg.trim_prefix("--attract-video=")
+		elif arg.begins_with("--splash-frames="):
+			splash_frames = arg.trim_prefix("--splash-frames=")
 		elif arg.begins_with("--config-path="):
 			config_path = arg.trim_prefix("--config-path=")
 		elif arg.begins_with("--analytics-dir="):
@@ -252,6 +279,7 @@ func _apply_command_line() -> void:
 			simulate_launch = true
 	games_dir = _normalize_path(games_dir)
 	attract_video = _normalize_path(attract_video)
+	splash_frames = _normalize_path(splash_frames)
 	config_path = _normalize_path(config_path)
 	analytics_dir = _normalize_path(analytics_dir)
 
@@ -274,6 +302,8 @@ func _load_config() -> void:
 	send_pause_delay_seconds = DEFAULT_SEND_PAUSE_DELAY_SECONDS
 	failed_message_seconds = DEFAULT_FAILED_MESSAGE_SECONDS
 	hard_reset_seconds = DEFAULT_HARD_RESET_SECONDS
+	splash_fps = DEFAULT_SPLASH_FPS
+	splash_seconds = DEFAULT_SPLASH_SECONDS
 
 	if not FileAccess.file_exists(config_path):
 		return
@@ -296,6 +326,8 @@ func _load_config() -> void:
 	send_pause_delay_seconds = _read_seconds(parsed, "send_pause_delay_seconds")
 	failed_message_seconds = _read_seconds(parsed, "failed_message_seconds")
 	hard_reset_seconds = _read_seconds(parsed, "hard_reset_seconds")
+	splash_fps = _read_seconds(parsed, "splash_fps")
+	splash_seconds = _read_seconds(parsed, "splash_seconds")
 
 	# The values still load, but flag an inversion: idle-kill firing before an
 	# attract timeout, or the menu timeout outlasting the in-game one, is almost

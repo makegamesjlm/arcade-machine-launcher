@@ -1,10 +1,11 @@
-[gd_scene load_steps=8 format=3 uid="uid://bmain0arcade01"]
+[gd_scene load_steps=9 format=3 uid="uid://bmain0arcade01"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="FontVariation" path="res://theme/fonts/handjet_bold.tres" id="2_bold_font"]
 [ext_resource type="Script" path="res://scripts/session_controller.gd" id="3_session"]
 [ext_resource type="PackedScene" path="res://scenes/system_overlay.tscn" id="4_overlay"]
 [ext_resource type="PackedScene" path="res://scenes/attract.tscn" id="5_attract"]
+[ext_resource type="PackedScene" path="res://scenes/splash.tscn" id="6_splash"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_detail"]
 bg_color = Color(0.118, 0.102, 0.239, 1)
@@ -231,6 +232,9 @@ theme_override_font_sizes/font_size = 24
 text = "Applying controller mapping"
 horizontal_alignment = 1
 autowrap_mode = 3
+
+[node name="SplashScreen" parent="." instance=ExtResource("6_splash")]
+unique_name_in_owner = true
 
 [node name="SessionController" type="Node" parent="."]
 unique_name_in_owner = true
