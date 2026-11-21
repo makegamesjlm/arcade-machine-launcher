@@ -396,6 +396,16 @@ button table InputRouter depends on, the system overlay's navigation, and all
 three simulated launch outcomes. Exits non-zero on failure. shanwan-remap has
 its own `pytest` suite - see shanwan-remap/README.md.
 
+### Connecting Remotely
+
+ssh: 
+
+`ssh makegamesjlm@jlmarcade-1`
+rdp: 
+
+computer: jlmarcade-1:3389
+user name: makegamesjlm
+
 ### Screenshots
 
 ```bash
