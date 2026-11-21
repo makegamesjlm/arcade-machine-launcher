@@ -52,6 +52,11 @@ var _white_held := false
 ## fires, white was held long enough (Cfg.hard_reset_seconds) to mean a hard
 ## reset rather than a tap.
 var _hard_reset_timer: Timer
+## True while the keyboard stand-in for white (the `system_button` action, F1)
+## is down. Tracked apart from _white_held so losing window focus mid-hold -
+## an RDP client minimized or disconnected before the key-up arrives - can
+## cancel a keyboard hold without ever touching a real white-button hold.
+var _white_key_down := false
 
 @onready var _overlay_ui: SystemOverlay = %SystemOverlay
 @onready var _attract_ui: AttractScreen = %AttractScreen
@@ -161,6 +166,34 @@ func _handle_white(pressed: bool) -> void:
 		_white_held = false
 		_hard_reset_timer.stop()
 		_on_white_tap()
+
+
+## Keyboard stand-in for white, for testing over remote desktop where no
+## cabinet button can be pressed. F1 drives the exact same tap/hold logic as
+## the real button. It only reaches Godot while the launcher window has focus,
+## so unlike the real white it cannot interrupt a running game. Key repeat is
+## ignored: an echoed press would restart the hard-reset timer every few
+## frames and a hold would never reach it.
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("system_button"):
+		_white_key_down = true
+		_handle_white(true)
+	elif event.is_action_released("system_button") and _white_key_down:
+		_white_key_down = false
+		_handle_white(false)
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+## A key-up lost to a focus change would otherwise leave the hard-reset timer
+## running and quit the launcher a few seconds later. Cancels the hold
+## outright - neither a tap nor a reset.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT and _white_key_down:
+		_white_key_down = false
+		_white_held = false
+		_hard_reset_timer.stop()
 
 
 func _on_white_tap() -> void:

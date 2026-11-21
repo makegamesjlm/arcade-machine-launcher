@@ -159,6 +159,24 @@ overlay is open, or attract mode is showing. The top buttons do nothing in the
 launcher: volume and mute are changed only from the system overlay's volume
 row (white button), so nobody changes them by accident from the grid.
 
+### Keyboard (remote desktop testing)
+
+The cabinet has no keyboard, but every launcher control has a key so it can be
+driven over RDP:
+
+| Key | Same as |
+| --- | --- |
+| Arrow keys | Joystick / d-pad |
+| Enter | Bottom-right button |
+| Escape | Bottom-middle button |
+| F1 | White button — tap opens/continues the overlay, hold for `hard_reset_seconds` is a hard reset |
+| F3 | Rescan the games folder |
+| Any key except F1 | Wakes attract mode (F1 wakes it on release, like a white tap) |
+
+Keys reach the launcher only while its window has focus, so F1 cannot open the
+overlay while a game is running in front. Losing focus while F1 is held
+cancels the hold rather than resetting.
+
 ## What happens on select
 
 1. The game's `keymap.json` is validated and installed at
@@ -461,7 +479,7 @@ godot --path . -- --no-fullscreen --games-dir=dev/games --keymap-path=dev/keymap
 ```
 
 This runs the real UI and keymap-writing flow without attempting to execute the
-Linux fixture binaries. Arrow keys navigate and F5 refreshes. Enter starts a
+Linux fixture binaries. Arrow keys navigate and F3 refreshes. Enter starts a
 simulated game; press Escape to finish it successfully. Shift+Enter simulates a
 failure before the game starts, and Ctrl+Enter simulates a game that starts and
 then crashes immediately.
