@@ -15,6 +15,11 @@ const REPEAT_INTERVAL_SECONDS := 0.11
 ## does not scroll; stepping past either edge scrolls the window by one game.
 const VISIBLE_COUNT := 5
 
+## How much of a hidden neighbour shows past each edge of the window when there
+## are more games than fit, as a fraction of a card. The cut-off card tells the
+## player the row keeps going. Only used once the row overflows; see _overflows.
+const PEEK_FRACTION := 0.5
+
 ## How long the row takes to slide one game when the window scrolls.
 const CAROUSEL_SLIDE_SECONDS := 0.18
 
@@ -48,9 +53,10 @@ var _volume: VolumeControl
 ## Slides the row by one game when the window scrolls; killed and restarted on
 ## each move. See _scroll_to_first.
 var _row_tween: Tween
-## Fillers on each end of the row that center the visible window - zero-width
-## when VISIBLE_COUNT games fill the shelf, wider when there are fewer games than
-## slots. Rebuilt with the cards; widths tracked on resize. See _update_spacers.
+## Fillers on each end of the row that center the visible window - the width of
+## a peek when the row overflows (so the first and last windows leave the empty
+## peek area blank), wider when there are fewer games than slots. Rebuilt with
+## the cards; widths tracked on resize. See _update_spacers.
 var _lead_spacer: Control
 var _trail_spacer: Control
 ## Index of the leftmost game currently shown. The window is [_first, _first +
@@ -222,24 +228,45 @@ func _make_spacer() -> Control:
 	return spacer
 
 
+## True when there are more games than the window shows, so some are off-screen
+## and the row reserves room at each edge for a peek at the next one.
+func _overflows() -> bool:
+	return _cards.size() > VISIBLE_COUNT
+
+
 ## Width one card is given so VISIBLE_COUNT of them, plus the gaps between and a
-## one-gap inset at each shelf edge, fill the shelf. That edge inset (applied as
-## the end spacers in _update_spacers) keeps the outermost card - and the glow
-## and scale it gains when highlighted - clear of the shelf's clip edge. Making
-## it equal to the gap between cards means a card scrolled just off-screen lands
-## exactly at the edge, so no sliver of it peeks in. Derived from the live shelf
-## width so the row adapts to a resize; zero until the shelf has a real size.
+## one-gap inset at each shelf edge, fill the shelf. That edge inset keeps the
+## outermost full card - and the glow and scale it gains when highlighted - clear
+## of the shelf's clip edge. When the row overflows, a PEEK_FRACTION slice of a
+## card is also fitted beyond each inset, so the neighbour just past the window
+## shows partly, cut off by the shelf edge. Derived from the live shelf width so
+## the row adapts to a resize; zero until the shelf has a real size.
 func _card_width() -> float:
 	if _shelf.size.x <= 0.0:
 		return 0.0
 	var sep: int = _row.get_theme_constant("separation")
 	# (VISIBLE_COUNT - 1) gaps between cards, plus one gap of inset on each edge.
 	var usable := _shelf.size.x - (VISIBLE_COUNT + 1) * sep
-	return maxf(0.0, usable / float(VISIBLE_COUNT))
+	var slots := float(VISIBLE_COUNT)
+	if _overflows():
+		slots += 2.0 * PEEK_FRACTION
+	return maxf(0.0, usable / slots)
 
 
-## Sizes every card so VISIBLE_COUNT of them fill the shelf exactly - the row is
-## a set of fixed slots, not free-sized tiles.
+## Shelf x where the window's leftmost full card sits: whatever is left over
+## either side of the window's cards and gaps, split evenly. One gap of inset
+## when VISIBLE_COUNT games fill the shelf, a peek plus that gap when the row
+## overflows, more when there are fewer games than slots.
+func _window_left() -> float:
+	var sep: int = _row.get_theme_constant("separation")
+	var visible := mini(_cards.size(), VISIBLE_COUNT)
+	var group := visible * _card_width() + maxi(0, visible - 1) * sep
+	return maxf(0.0, (_shelf.size.x - group) * 0.5)
+
+
+## Sizes every card so VISIBLE_COUNT of them (plus the peeks, when the row
+## overflows) fill the shelf exactly - the row is a set of fixed slots, not
+## free-sized tiles.
 func _apply_card_widths() -> void:
 	var w := _card_width()
 	if w <= 0.0:
@@ -248,16 +275,17 @@ func _apply_card_widths() -> void:
 		card.custom_minimum_size.x = w
 
 
-## Centers the visible window: no spacer when VISIBLE_COUNT games fill the shelf,
-## growing spacers when there are fewer games than slots so the short row sits in
-## the middle instead of jammed to the left.
+## Pads each end of the row so its first card starts at _window_left() when the
+## row is scrolled all the way left (and its last card ends the same distance
+## from the right edge when scrolled all the way right). The row puts one gap
+## after the lead spacer and one before the trail spacer, so those are taken
+## off. With overflow this leaves a blank peek-sized area beside the first and
+## last cards; with fewer games than slots it centers the short row.
 func _update_spacers() -> void:
 	if _lead_spacer == null:
 		return
 	var sep: int = _row.get_theme_constant("separation")
-	var visible := mini(_cards.size(), VISIBLE_COUNT)
-	var group := visible * _card_width() + maxi(0, visible - 1) * sep
-	var margin := maxf(0.0, (_shelf.size.x - group) * 0.5)
+	var margin := maxf(0.0, _window_left() - sep)
 	_lead_spacer.custom_minimum_size.x = margin
 	_trail_spacer.custom_minimum_size.x = margin
 
@@ -391,18 +419,18 @@ func _update_window(sel: int) -> void:
 	_first = clampi(_first, 0, maxi(0, _cards.size() - VISIBLE_COUNT))
 
 
-## Scrolls so the window's leftmost game (_first) sits at the left edge of the
-## centered block - one card pitch per index, so each edge-scroll moves exactly
-## one game. The leading `sep` skips the separation the row puts after the lead
-## spacer, so the leftmost card lands flush against the block instead of a gap
-## short. Snaps instead of sliding when `animate` is false: right after a
-## relayout or resize, where there is no prior position to slide from.
+## Scrolls so the window's leftmost game (_first) sits at _window_left() - one
+## card pitch per index, so each edge-scroll moves exactly one game and the
+## peeking neighbours slide along with it. The spacers already put card 0 at
+## _window_left() with no scroll, so the offset is just the pitches skipped.
+## Snaps instead of sliding when `animate` is false: right after a relayout or
+## resize, where there is no prior position to slide from.
 func _scroll_to_first(animate := true) -> void:
 	var w := _card_width()
 	if w <= 0.0:
 		return
 	var sep: int = _row.get_theme_constant("separation")
-	var target := int(round(sep + _first * (w + sep)))
+	var target := int(round(_first * (w + sep)))
 
 	if _row_tween != null and _row_tween.is_running():
 		_row_tween.kill()
